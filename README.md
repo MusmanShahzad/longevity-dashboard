@@ -18,7 +18,7 @@ A comprehensive health tracking system with AI-powered sleep analysis, SHIELD sc
 ## 🏗️ Architecture
 
 ### System Overview
-\`\`\`
+```
 ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
 │   Frontend      │    │   Backend API   │    │   Database      │
 │   (Next.js)     │◄──►│   (Next.js API) │◄──►│   (Supabase)    │
@@ -28,7 +28,7 @@ A comprehensive health tracking system with AI-powered sleep analysis, SHIELD sc
 │ • Charts        │    │ • Health Alerts │    │ • Health Alerts │
 │ • Dashboard     │    │ • User Mgmt     │    │ • Lab Reports   │
 └─────────────────┘    └─────────────────┘    └─────────────────┘
-\`\`\`
+```
 
 ### Technology Stack
 - **Frontend**: Next.js 14, React 18, TypeScript
@@ -41,7 +41,7 @@ A comprehensive health tracking system with AI-powered sleep analysis, SHIELD sc
 - **Deployment**: Vercel (recommended)
 
 ### Key Components Architecture
-\`\`\`
+```
 components/
 ├── atoms/           # Basic UI elements
 │   ├── glass-card.tsx
@@ -60,12 +60,12 @@ components/
     ├── bio-age-delta-card.tsx
     ├── health-alerts-card.tsx
     └── sleep-charts-card.tsx
-\`\`\`
+```
 
 ## 🗄️ Database Schema
 
 ### Core Tables
-\`\`\`sql
+```sql
 -- Users table
 CREATE TABLE users (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -123,14 +123,14 @@ CREATE TABLE lab_reports (
 CREATE INDEX idx_sleep_data_user_date ON sleep_data(user_id, date DESC);
 CREATE INDEX idx_health_alerts_user_sleep_date ON health_alerts(user_id, sleep_date DESC);
 CREATE INDEX idx_lab_reports_user_uploaded ON lab_reports(user_id, uploaded_at DESC);
-\`\`\`
+```
 
 ## 🧮 Calculations & Algorithms
 
 ### SHIELD Score Calculation
 The SHIELD score is our proprietary algorithm that evaluates sleep quality on a 0-100 scale:
 
-\`\`\`typescript
+```typescript
 function calculateShieldScore(
   totalSleepHours: number,
   sleepEfficiency: number,
@@ -161,7 +161,7 @@ function calculateShieldScore(
 
   return Math.max(0, score); // Ensure score doesn't go below 0
 }
-\`\`\`
+```
 
 **SHIELD Score Ranges:**
 - 95-100: Exceptional sleep quality
@@ -171,16 +171,16 @@ function calculateShieldScore(
 - 0-64: Needs improvement
 
 ### Sleep Efficiency Calculation
-\`\`\`typescript
+```typescript
 const sleepEfficiency = (totalSleepHours / timeInBed) * 100;
-\`\`\`
+```
 - **Optimal Range**: 85%+ (clinical standard)
 - **Formula**: (Actual Sleep Time ÷ Time in Bed) × 100
 
 ### Bio-Age Delta Calculation
 Estimates biological age based on sleep patterns:
 
-\`\`\`typescript
+```typescript
 function calculateBioAgeDelta(
   chronologicalAge: number,
   sleepEfficiency: number,
@@ -208,10 +208,10 @@ function calculateBioAgeDelta(
   const biologicalAge = chronologicalAge + bioAgeModifier;
   return chronologicalAge - biologicalAge; // Positive = younger than chronological age
 }
-\`\`\`
+```
 
 ### Sleep Stage Distribution
-\`\`\`typescript
+```typescript
 // Simplified sleep stage calculations
 const deepSleepPercentage = Math.max(0, 25 - (remPercentage || 0) * 0.3);
 const lightSleepPercentage = Math.max(
@@ -219,7 +219,7 @@ const lightSleepPercentage = Math.max(
   100 - (remPercentage || 0) - deepSleepPercentage - (100 - sleepEfficiency)
 );
 const awakePercentage = Math.max(0, 100 - sleepEfficiency);
-\`\`\`
+```
 
 ## 🔧 Assumptions & Design Decisions
 
@@ -252,22 +252,22 @@ const awakePercentage = Math.max(0, 100 - sleepEfficiency);
 - Git for version control
 
 ### 1. Clone Repository
-\`\`\`bash
+```bash
 git clone <repository-url>
 cd longevity-clinic-dashboard
-\`\`\`
+```
 
 ### 2. Install Dependencies
-\`\`\`bash
+```bash
 npm install
 # or
 yarn install
-\`\`\`
+```
 
 ### 3. Environment Setup
 Create a `.env.local` file in the root directory:
 
-\`\`\`env
+```env
 # Supabase Configuration
 NEXT_PUBLIC_SUPABASE_URL=your_supabase_project_url
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
@@ -276,13 +276,13 @@ SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key
 # Optional: For enhanced security
 NEXTAUTH_SECRET=your_nextauth_secret
 NEXTAUTH_URL=http://localhost:3000
-\`\`\`
+```
 
 ### 4. Database Setup
 1. **Create Supabase Project**: Go to [supabase.com](https://supabase.com) and create a new project
 2. **Run SQL Migrations**: Copy and execute the SQL schema from the Database Schema section above
 3. **Enable Row Level Security** (optional but recommended):
-\`\`\`sql
+```sql
 -- Enable RLS on all tables
 ALTER TABLE users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE sleep_data ENABLE ROW LEVEL SECURITY;
@@ -292,24 +292,24 @@ ALTER TABLE lab_reports ENABLE ROW LEVEL SECURITY;
 -- Create policies (example for users table)
 CREATE POLICY "Users can view own data" ON users
   FOR SELECT USING (auth.uid()::text = id::text);
-\`\`\`
+```
 
 ### 5. Storage Setup (for lab reports)
-\`\`\`sql
+```sql
 -- Create storage bucket for lab reports
 INSERT INTO storage.buckets (id, name, public) VALUES ('lab-reports', 'lab-reports', false);
 
 -- Create storage policy
 CREATE POLICY "Users can upload own lab reports" ON storage.objects
   FOR INSERT WITH CHECK (bucket_id = 'lab-reports' AND auth.uid()::text = (storage.foldername(name))[1]);
-\`\`\`
+```
 
 ### 6. Run Development Server
-\`\`\`bash
+```bash
 npm run dev
 # or
 yarn dev
-\`\`\`
+```
 
 Open [http://localhost:3000](http://localhost:3000) in your browser.
 
@@ -362,7 +362,7 @@ Test different scenarios to verify scoring:
 ### API Testing
 Use curl or Postman to test API endpoints:
 
-\`\`\`bash
+```bash
 # Test user creation
 curl -X POST http://localhost:3000/api/users \
   -H "Content-Type: application/json" \
@@ -390,10 +390,10 @@ curl http://localhost:3000/api/users/user-uuid-here/metrics
 
 # Test fetching health alerts
 curl http://localhost:3000/api/health-alerts?user_id=user-uuid-here
-\`\`\`
+```
 
 ### Automated Testing (Future Enhancement)
-\`\`\`bash
+```bash
 # Unit tests
 npm run test
 
@@ -402,22 +402,22 @@ npm run test:integration
 
 # E2E tests with Playwright
 npm run test:e2e
-\`\`\`
+```
 
 ## 🌐 Deployment
 
 ### Vercel Deployment (Recommended)
 
 1. **Install Vercel CLI**
-\`\`\`bash
+```bash
 npm install -g vercel
-\`\`\`
+```
 
 2. **Login and Deploy**
-\`\`\`bash
+```bash
 vercel login
 vercel
-\`\`\`
+```
 
 3. **Configure Environment Variables**
 In Vercel dashboard, add:
@@ -426,9 +426,9 @@ In Vercel dashboard, add:
 - `SUPABASE_SERVICE_ROLE_KEY`
 
 4. **Deploy to Production**
-\`\`\`bash
+```bash
 vercel --prod
-\`\`\`
+```
 
 ### Alternative Deployment Options
 
@@ -457,3 +457,4 @@ RUN npm run build
 
 EXPOSE 3000
 CMD ["npm", "start"]
+```
