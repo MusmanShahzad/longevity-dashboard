@@ -1,11 +1,12 @@
 "use client"
 
 import type React from "react"
-import { useState, useEffect, useCallback } from "react"
-import { Upload, FileText, Plus, CheckCircle, Clock, AlertCircle, type LucideIcon } from "lucide-react"
+import { useState } from "react"
+import { Upload, FileText, Plus, CheckCircle, Clock, AlertCircle, Activity, type LucideIcon } from "lucide-react"
 import { GlassCard } from "@/components/atoms/glass-card"
 import { Button } from "@/components/ui/button"
-import type { LabReport } from "@/lib/supabase"
+import { useLabReportsWithUpload, type LabReport } from "@/lib/hooks/use-lab-reports"
+import { BiomarkerReportModal } from "./biomarker-report-modal"
 
 interface LabUploadCardProps {
   userId: string
@@ -80,26 +81,48 @@ const FileUploadZone = ({ uploading, onFileUpload }: FileUploadZoneProps) => (
 // Lab report item component
 interface LabReportItemProps {
   report: LabReport
+  onViewBiomarkers: (reportId: string) => void
 }
 
-const LabReportItem = ({ report }: LabReportItemProps) => {
+const LabReportItem = ({ report, onViewBiomarkers }: LabReportItemProps) => {
   const statusConfig = STATUS_CONFIG[report.status as keyof typeof STATUS_CONFIG] || STATUS_CONFIG.default
   const StatusIcon = statusConfig.icon
   
   const formatDate = (dateString: string) => 
     new Date(dateString).toLocaleDateString()
 
+  const hasBiomarkers = report.status === 'processed' && report.biomarkers && report.biomarkers.length > 0
+
   return (
-    <div className="flex items-center justify-between p-3 rounded-lg bg-white/5">
+    <div className="flex items-center justify-between p-3 rounded-lg bg-white/5 hover:bg-white/10 transition-colors">
       <div className="flex items-center space-x-3">
         <FileText className="h-4 w-4 text-cyan-400" />
         <div>
           <p className="text-sm font-medium text-white">{report.name}</p>
-          <p className="text-xs text-gray-400">{formatDate(report.uploaded_at)}</p>
+          <div className="flex items-center space-x-2 text-xs text-gray-400">
+            <span>{formatDate(report.uploaded_at)}</span>
+            {hasBiomarkers && (
+              <>
+                <span>•</span>
+                <span className="text-green-400">{report.biomarkers?.length} biomarkers</span>
+              </>
+            )}
+          </div>
         </div>
       </div>
       <div className="flex items-center space-x-2">
         <StatusIcon className={`h-4 w-4 ${statusConfig.color}`} />
+        {hasBiomarkers && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => onViewBiomarkers(report.id)}
+            className="text-xs text-green-400 hover:text-green-300"
+          >
+            <Activity className="h-3 w-3 mr-1" />
+            Analysis
+          </Button>
+        )}
         {report.file_url && (
           <Button
             variant="ghost"
@@ -123,59 +146,31 @@ const InfoBanner = () => (
 )
 
 export function LabUploadCard({ userId }: LabUploadCardProps) {
-  const [labReports, setLabReports] = useState<LabReport[]>([])
-  const [loading, setLoading] = useState(true)
-  const [uploading, setUploading] = useState(false)
+  const [selectedReportId, setSelectedReportId] = useState<string | null>(null)
+  
+  const { 
+    data, 
+    isLoading: loading, 
+    error,
+    uploadLabReport,
+    isUploading: uploading,
+    uploadError,
+    uploadSuccess
+  } = useLabReportsWithUpload(userId)
 
-  const fetchLabReports = useCallback(async () => {
-    try {
-      setLoading(true)
-      const response = await fetch(`/api/lab-reports?user_id=${userId}`)
-      const data = await response.json()
-
-      if (response.ok) {
-        setLabReports(data.labReports || [])
-      }
-    } catch (error) {
-      console.error("Failed to fetch lab reports:", error)
-    } finally {
-      setLoading(false)
-    }
-  }, [userId])
-
-  useEffect(() => {
-    fetchLabReports()
-  }, [fetchLabReports])
+  const labReports = data?.labReports || []
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
     if (!file) return
 
-    setUploading(true)
-
     try {
-      const formData = new FormData()
-      formData.append('file', file)
-      formData.append('user_id', userId)
-
-      const response = await fetch("/api/lab-reports", {
-        method: "POST",
-        body: formData,
-      })
-
-      const data = await response.json()
-
-      if (!response.ok) {
-        throw new Error(data.error || "Failed to upload lab report")
-      }
-
-      // alert(data.message || "File uploaded successfully!")
-      fetchLabReports()
+      await uploadLabReport(file)
+      // Success is handled automatically by React Query
     } catch (error) {
       console.error("Failed to upload lab report:", error)
       alert(`Failed to upload lab report: ${error instanceof Error ? error.message : 'Unknown error'}`)
     } finally {
-      setUploading(false)
       event.target.value = ""
     }
   }
@@ -200,12 +195,25 @@ export function LabUploadCard({ userId }: LabUploadCardProps) {
         <div className="space-y-3">
           <h4 className="text-sm font-medium text-gray-300">Recent Uploads</h4>
           {labReports.map((report) => (
-            <LabReportItem key={report.id} report={report} />
+            <LabReportItem 
+              key={report.id} 
+              report={report} 
+              onViewBiomarkers={setSelectedReportId}
+            />
           ))}
         </div>
       )}
       
       <InfoBanner />
+      
+      {/* Biomarker Report Modal */}
+      {selectedReportId && (
+        <BiomarkerReportModal
+          reportId={selectedReportId}
+          isOpen={!!selectedReportId}
+          onClose={() => setSelectedReportId(null)}
+        />
+      )}
     </GlassCard>
   )
 }

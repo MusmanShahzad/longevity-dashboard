@@ -5,6 +5,7 @@ import { HealthAlertsCard } from "@/components/organisms/health-alerts-card"
 import { SleepChartsCard } from "@/components/organisms/sleep-charts-card"
 import { UserProfileCard } from "@/components/organisms/user-profile-card"
 import { LabUploadCard } from "@/components/organisms/lab-upload-card"
+import { BiomarkerAnalysisCard } from "@/components/organisms/biomarker-analysis-card"
 import { Header } from "@/components/organisms/header"
 import { useUser } from "@/app/contexts/user-context"
 import type { User } from "@/lib/supabase"
@@ -53,6 +54,9 @@ export function Dashboard({ currentUser: propCurrentUser }: DashboardProps) {
 
             {/* Health Alerts */}
             <HealthAlertsCard userId={currentUser.id} />
+
+            {/* Biomarker Analysis */}
+            <BiomarkerAnalysisCard userId={currentUser.id} />
           </div>
 
           {/* Right Column */}

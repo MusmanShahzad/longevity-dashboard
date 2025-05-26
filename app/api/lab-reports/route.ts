@@ -1,6 +1,8 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { supabase } from "@/lib/supabase"
 import { supabaseServer, uploadConfig } from "@/lib/supabase-server"
+import { extractBiomarkersFromText, extractTextFromPDF, generateBiomarkerInsights } from "@/lib/biomarker-extraction"
+import { HIPAACompliance } from "@/lib/hipaa-compliance"
 
 export async function POST(request: NextRequest) {
   try {
@@ -79,14 +81,98 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: dbError.message }, { status: 400 })
     }
 
+    // Log HIPAA audit event for lab report upload
+    await HIPAACompliance.HIPAAAuditLogger.logEvent({
+      event_type: 'lab_report_upload',
+      user_id: userId,
+      resource_type: 'lab_reports',
+      resource_id: labReport.id,
+      action: 'upload',
+      ip_address: request.headers.get('x-forwarded-for') || 'unknown',
+      user_agent: request.headers.get('user-agent') || 'unknown',
+      success: true,
+      risk_level: 'medium',
+      details: { 
+        filename: file.name,
+        fileSize: file.size,
+        fileType: file.type
+      }
+    })
+
+    // Start biomarker extraction process (async)
+    processBiomarkerExtraction(labReport.id, publicUrl).catch(console.error)
+
     return NextResponse.json({ 
       labReport,
-      message: "File uploaded successfully" 
+      message: "File uploaded successfully. Biomarker extraction in progress." 
     }, { status: 201 })
 
   } catch (error) {
     console.error('Server error:', error)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })
+  }
+}
+
+// Background process for biomarker extraction
+async function processBiomarkerExtraction(labReportId: string, fileUrl: string) {
+  try {
+    // Extract text from the uploaded file
+    const extractedText = await extractTextFromPDF(fileUrl)
+    
+    // Extract biomarkers from the text
+    const biomarkerData = extractBiomarkersFromText(extractedText)
+    
+    // Generate health insights
+    const insights = generateBiomarkerInsights(biomarkerData.biomarkers)
+    
+    // Update lab report with extracted data
+    const { error: updateError } = await supabase
+      .from("lab_reports")
+      .update({
+        status: "processed",
+        biomarkers: biomarkerData.biomarkers,
+        extraction_confidence: biomarkerData.confidence,
+        health_insights: insights,
+        processed_at: new Date().toISOString()
+      })
+      .eq("id", labReportId)
+
+    if (updateError) {
+      console.error('Failed to update lab report with biomarkers:', updateError)
+      
+      // Mark as error status
+      await supabase
+        .from("lab_reports")
+        .update({ status: "error" })
+        .eq("id", labReportId)
+    } else {
+      // Log successful biomarker extraction
+      await HIPAACompliance.HIPAAAuditLogger.logEvent({
+        event_type: 'biomarker_extraction',
+        user_id: 'system', // System-initiated process
+        resource_type: 'lab_reports',
+        resource_id: labReportId,
+        action: 'biomarker_extraction_completed',
+        ip_address: '127.0.0.1',
+        user_agent: 'system_process',
+        success: true,
+        risk_level: 'low',
+        details: {
+          biomarkers_extracted: biomarkerData.biomarkers.length,
+          confidence: biomarkerData.confidence,
+          insights_generated: insights.length
+        }
+      })
+    }
+    
+  } catch (error) {
+    console.error('Biomarker extraction failed:', error)
+    
+    // Mark as error status
+    await supabase
+      .from("lab_reports")
+      .update({ status: "error" })
+      .eq("id", labReportId)
   }
 }
 

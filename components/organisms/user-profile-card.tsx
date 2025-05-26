@@ -3,7 +3,7 @@
 import { User, Calendar, MapPin, Phone, Edit, RefreshCw } from "lucide-react"
 import { GlassCard } from "@/components/atoms/glass-card"
 import { Button } from "@/components/ui/button"
-import { useUserMetrics } from "@/lib/hooks/use-users"
+import { useMetrics } from "@/lib/hooks/use-metrics"
 import type { User as UserType } from "@/lib/supabase"
 import { calculateAge } from "@/lib/supabase"
 
@@ -41,7 +41,7 @@ const ProfileDetail = ({
 )
 
 const MetricsPreview = ({ userId }: { userId: string }) => {
-  const { data: metrics, isLoading } = useUserMetrics(userId)
+  const { data: metrics, isLoading } = useMetrics(userId)
 
   if (isLoading) {
     return (

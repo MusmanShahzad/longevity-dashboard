@@ -17,6 +17,8 @@ import { DateInput } from "@/components/atoms/date-input"
 import { CalculatedField } from "@/components/molecules/calculated-field"
 import { Button } from "@/components/ui/button"
 import { GlassCard } from "@/components/atoms/glass-card"
+import { useHealthAlerts } from "@/lib/hooks/use-health-alerts"
+import { useSleepDataWithMutation } from "@/lib/hooks/use-sleep-data"
 
 // Types
 interface HealthDataModalProps {
@@ -352,6 +354,14 @@ const SleepForm = ({
 )
 
 export function HealthDataModal({ isOpen, onClose, currentUser, onDataUpdate }: HealthDataModalProps) {
+  // React Query hooks
+  const { data: healthAlertsData } = useHealthAlerts(currentUser?.id || '')
+  const { 
+    findDataForDate, 
+    createSleepDataEntry, 
+    isCreating 
+  } = useSleepDataWithMutation(currentUser?.id || '')
+
   // State management
   const [modalState, setModalState] = useState<ModalState>({
     isUpdating: false,
@@ -365,11 +375,9 @@ export function HealthDataModal({ isOpen, onClose, currentUser, onDataUpdate }: 
   })
 
   const [sleepEfficiency, setSleepEfficiency] = useState<number>(0)
-  const [isSubmitting, setIsSubmitting] = useState(false)
 
-  // Refs for debouncing and request management
+  // Refs for debouncing
   const dateCheckTimeoutRef = useRef<NodeJS.Timeout | null>(null)
-  const abortControllerRef = useRef<AbortController | null>(null)
 
   // Initial form values
   const initialValues: FormValues = {
@@ -379,14 +387,21 @@ export function HealthDataModal({ isOpen, onClose, currentUser, onDataUpdate }: 
     date: new Date().toISOString().split("T")[0]
   }
 
+  // Update suggestions count when health alerts data changes
+  useEffect(() => {
+    if (healthAlertsData?.alerts) {
+      setModalState(prev => ({ 
+        ...prev, 
+        savedSuggestionsCount: healthAlertsData.alerts.length 
+      }))
+    }
+  }, [healthAlertsData])
+
   // Cleanup on unmount
   useEffect(() => {
     return () => {
       if (dateCheckTimeoutRef.current) {
         clearTimeout(dateCheckTimeoutRef.current)
-      }
-      if (abortControllerRef.current) {
-        abortControllerRef.current.abort()
       }
     }
   }, [])
@@ -399,75 +414,40 @@ export function HealthDataModal({ isOpen, onClose, currentUser, onDataUpdate }: 
         backendSuggestions: [],
         showSuggestions: false,
         isCheckingData: false,
-        savedSuggestionsCount: 0,
+        savedSuggestionsCount: healthAlertsData?.alerts?.length || 0,
         shieldScore: 0,
         error: "",
         success: ""
       })
       setSleepEfficiency(0)
-      setIsSubmitting(false)
-
-      if (currentUser) {
-        fetchSuggestionsCount()
-      }
     }
-  }, [isOpen, currentUser])
+  }, [isOpen, healthAlertsData])
 
-  const fetchSuggestionsCount = async () => {
-    if (!currentUser) return
-
-    try {
-      const response = await fetch(`/api/health-alerts?user_id=${currentUser.id}`)
-      const data = await response.json()
-      if (response.ok && data.alerts) {
-        setModalState(prev => ({ ...prev, savedSuggestionsCount: data.alerts.length }))
-      }
-    } catch (error) {
-      console.error("Failed to fetch suggestions count:", error)
-    }
-  }
-
-  const checkExistingData = useCallback(async (date: string, setFieldValue: (field: string, value: any) => void) => {
+  const checkExistingData = useCallback((date: string, setFieldValue: (field: string, value: any) => void) => {
     if (!currentUser || !date) return
 
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort()
-    }
-
-    abortControllerRef.current = new AbortController()
+    setModalState(prev => ({ ...prev, isCheckingData: true }))
 
     try {
-      setModalState(prev => ({ ...prev, isCheckingData: true }))
+      const existingRecord = findDataForDate(date)
 
-      const response = await fetch(`/api/sleep-data?user_id=${currentUser.id}`, {
-        signal: abortControllerRef.current.signal,
-      })
-
-      const data = await response.json()
-
-      if (response.ok && data.sleepData) {
-        const existingRecord = data.sleepData.find((record: any) => record.date === date)
-
-        if (existingRecord) {
-          setModalState(prev => ({ ...prev, isUpdating: true }))
-          setFieldValue('totalSleepHours', existingRecord.total_sleep_hours || 0)
-          setFieldValue('timeInBed', existingRecord.time_in_bed || 0)
-          setFieldValue('remPercentage', existingRecord.rem_percentage || 0)
-        } else {
-          setModalState(prev => ({ ...prev, isUpdating: false }))
-          setFieldValue('totalSleepHours', 0)
-          setFieldValue('timeInBed', 0)
-          setFieldValue('remPercentage', 0)
-        }
+      if (existingRecord) {
+        setModalState(prev => ({ ...prev, isUpdating: true }))
+        setFieldValue('totalSleepHours', existingRecord.total_sleep_hours || 0)
+        setFieldValue('timeInBed', existingRecord.time_in_bed || 0)
+        setFieldValue('remPercentage', existingRecord.rem_percentage || 0)
+      } else {
+        setModalState(prev => ({ ...prev, isUpdating: false }))
+        setFieldValue('totalSleepHours', 0)
+        setFieldValue('timeInBed', 0)
+        setFieldValue('remPercentage', 0)
       }
     } catch (error) {
-      if (error instanceof Error && error.name !== "AbortError") {
-        console.error("Failed to check existing data:", error)
-      }
+      console.error("Failed to check existing data:", error)
     } finally {
       setModalState(prev => ({ ...prev, isCheckingData: false }))
     }
-  }, [currentUser])
+  }, [currentUser, findDataForDate])
 
   const handleDateChange = useCallback((newDate: string, setFieldValue: (field: string, value: any) => void) => {
     if (dateCheckTimeoutRef.current) {
@@ -485,29 +465,15 @@ export function HealthDataModal({ isOpen, onClose, currentUser, onDataUpdate }: 
       return
     }
 
-    setIsSubmitting(true)
     setModalState(prev => ({ ...prev, error: "", success: "" }))
 
     try {
-      const response = await fetch("/api/sleep-data", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          user_id: currentUser.id,
-          date: values.date,
-          total_sleep_hours: values.totalSleepHours,
-          time_in_bed: values.timeInBed,
-          rem_percentage: values.remPercentage,
-        }),
+      const data = await createSleepDataEntry({
+        date: values.date,
+        total_sleep_hours: values.totalSleepHours,
+        time_in_bed: values.timeInBed,
+        rem_percentage: values.remPercentage,
       })
-
-      const data = await response.json()
-
-      if (!response.ok) {
-        throw new Error(data.error || "Failed to save sleep data")
-      }
 
       setModalState(prev => ({
         ...prev,
@@ -527,8 +493,6 @@ export function HealthDataModal({ isOpen, onClose, currentUser, onDataUpdate }: 
         ...prev,
         error: error instanceof Error ? error.message : "An error occurred while saving data"
       }))
-    } finally {
-      setIsSubmitting(false)
     }
   }
 
@@ -619,16 +583,16 @@ export function HealthDataModal({ isOpen, onClose, currentUser, onDataUpdate }: 
                         variant="outline"
                         onClick={onClose}
                         className="flex-1 border-gray-600 text-gray-300 hover:bg-white/5"
-                        disabled={isSubmitting}
+                        disabled={isCreating}
                       >
                         Cancel
                       </Button>
                       <Button
                         onClick={() => formik.handleSubmit()}
                         className="flex-1 bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-600 hover:to-blue-600"
-                        disabled={isSubmitting || !formik.isValid}
+                        disabled={isCreating || !formik.isValid}
                       >
-                        {isSubmitting
+                        {isCreating
                           ? modalState.isUpdating ? "Updating..." : "Saving..."
                           : modalState.isUpdating ? "Update Sleep Data" : "Save Sleep Data"}
                       </Button>

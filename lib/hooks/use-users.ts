@@ -6,10 +6,8 @@ import {
   updateUser, 
   deleteUser, 
   type UserInput,
-  type User,
 } from '@/lib/api/users'
-import { usersApi } from '../api/users.api'
-import { queryKeys } from '../query-client'
+import type { User } from '@/lib/supabase'
 // Get all users
 export const useUsers = () => {
   return useQuery({
@@ -31,15 +29,7 @@ export const useUser = (userId: string) => {
   })
 }
 
-// Get user metrics
-export const useUserMetrics = (id: string) => {
-  return useQuery({
-    queryKey: queryKeys.users.metrics(id),
-    queryFn: () => usersApi.getMetrics(id),
-    select: (data) => data.metrics,
-    enabled: !!id,
-  })
-}
+// Note: User metrics are now handled by the useMetrics hook in use-metrics.ts
 
 // Create user mutation
 export const useCreateUser = () => {

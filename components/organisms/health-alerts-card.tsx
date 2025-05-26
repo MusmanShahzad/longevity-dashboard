@@ -189,15 +189,18 @@ export function HealthAlertsCard({ userId }: HealthAlertsCardProps) {
 
   // React Query hooks
   const { 
-    data: alerts = [], 
+    data: healthAlertsData, 
     isLoading: alertsLoading, 
     error: alertsError 
   } = useHealthAlerts(userId)
   
   const { 
-    data: sleepData = [], 
+    data: sleepDataResponse, 
     isLoading: sleepLoading 
   } = useSleepData(userId)
+
+  const alerts = healthAlertsData?.alerts || []
+  const sleepData = sleepDataResponse?.sleepData || []
 
   const isLoading = alertsLoading || sleepLoading
 

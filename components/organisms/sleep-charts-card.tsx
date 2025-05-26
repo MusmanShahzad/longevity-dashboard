@@ -227,10 +227,12 @@ export function SleepChartsCard({ userId }: SleepChartsCardProps) {
 
   // React Query hook
   const { 
-    data: rawSleepData = [], 
+    data: sleepDataResponse, 
     isLoading, 
     error 
   } = useSleepData(userId)
+
+  const rawSleepData = sleepDataResponse?.sleepData || []
 
   // Process data for charts
   const sleepData: SleepDataPoint[] = rawSleepData
@@ -240,7 +242,7 @@ export function SleepChartsCard({ userId }: SleepChartsCardProps) {
       day: new Date(item.date).toLocaleDateString("en-US", { weekday: "short" }),
       date: item.date,
       hours: Number(item.total_sleep_hours) || 0,
-      efficiency: Number(item.sleep_efficiency) || 0,
+      efficiency: item.time_in_bed ? Math.round((Number(item.total_sleep_hours) / Number(item.time_in_bed)) * 100) : 0,
       rem: Number(item.rem_percentage) || 0,
       shieldScore: Number(item.shield_score) || 0,
     }))
@@ -248,26 +250,16 @@ export function SleepChartsCard({ userId }: SleepChartsCardProps) {
   // Process sleep stages data from latest entry
   const sleepStagesData: SleepStageData[] = rawSleepData.length > 0 ? [
     {
-      name: "Deep Sleep",
-      value: Number(rawSleepData[0].deep_sleep_percentage) || 0,
-      color: "#3b82f6",
-    },
-    {
       name: "REM Sleep", 
       value: Number(rawSleepData[0].rem_percentage) || 0,
       color: "#8b5cf6",
     },
     {
-      name: "Light Sleep",
-      value: Number(rawSleepData[0].light_sleep_percentage) || 0,
+      name: "Non-REM Sleep",
+      value: Math.max(0, 100 - (Number(rawSleepData[0].rem_percentage) || 0)),
       color: "#06b6d4",
     },
-    {
-      name: "Awake",
-      value: Number(rawSleepData[0].awake_percentage) || 0,
-      color: "#ef4444",
-    },
-  ] : []
+  ].filter(stage => stage.value > 0) : []
 
   if (isLoading) {
     return <LoadingSkeleton />
