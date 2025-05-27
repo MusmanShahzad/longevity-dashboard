@@ -1,13 +1,22 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { supabase, calculateAge } from "@/lib/supabase"
+import { withAPISecurity, commonSchemas, type SecurityContext } from "@/lib/api-security"
+import { HIPAAAuditLogger } from "@/lib/hipaa-compliance"
 
-export async function POST(request: NextRequest) {
+async function secureSleepDataHandler(
+  request: NextRequest,
+  context: SecurityContext
+): Promise<NextResponse> {
   try {
     const body = await request.json()
     const { user_id, date, total_sleep_hours, time_in_bed, rem_percentage } = body
 
+    // Set user context for audit logging
+    context.userId = user_id
+
     // Validate required fields
     if (!user_id || !date || total_sleep_hours === undefined || time_in_bed === undefined) {
+      console.warn('Sleep data validation failed:', { user_id, date, missing_fields: 'user_id, date, total_sleep_hours, or time_in_bed' })
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 })
     }
 
@@ -32,18 +41,44 @@ export async function POST(request: NextRequest) {
       .single()
 
     if (userError) {
+      console.error('Failed to get user data:', { user_id, error: userError.message })
       return NextResponse.json({ error: "Failed to get user data" }, { status: 400 })
     }
 
-    // Calculate sleep efficiency
+    // ===== SLEEP EFFICIENCY CALCULATION =====
+    // Sleep Efficiency = (Total Sleep Hours / Time in Bed) × 100
+    // This measures how efficiently you sleep while in bed
+    // Normal range: 85-95% (anything below 85% indicates sleep fragmentation)
+    // Example: 7 hours sleep / 8 hours in bed = 87.5% efficiency
     const sleep_efficiency = time_in_bed > 0 ? (total_sleep_hours / time_in_bed) * 100 : 0
 
-    // Calculate other sleep stages (simplified calculation)
+    // ===== SLEEP STAGE CALCULATIONS (Simplified Estimation) =====
+    
+    // DEEP SLEEP PERCENTAGE CALCULATION:
+    // Formula: Deep Sleep = max(0, 25% - (REM% × 0.3))
+    // Logic: Normal deep sleep is ~20-25% of total sleep
+    // As REM increases, deep sleep typically decreases (inverse relationship)
+    // The 0.3 factor represents this trade-off between REM and deep sleep
+    // Example: If REM = 20%, then Deep = max(0, 25 - (20 × 0.3)) = max(0, 25 - 6) = 19%
     const deep_sleep_percentage = Math.max(0, 25 - (rem_percentage || 0) * 0.3)
+    
+    // LIGHT SLEEP PERCENTAGE CALCULATION:
+    // Formula: Light Sleep = max(0, 100% - REM% - Deep% - Awake%)
+    // Where Awake% = (100% - Sleep Efficiency%)
+    // Logic: Light sleep fills the remaining sleep time after accounting for:
+    //   - REM sleep (provided by user)
+    //   - Deep sleep (calculated above)
+    //   - Time awake in bed (derived from sleep efficiency)
+    // Example: 100% - 20% REM - 19% Deep - 12.5% Awake = 48.5% Light Sleep
     const light_sleep_percentage = Math.max(
       0,
       100 - (rem_percentage || 0) - deep_sleep_percentage - (100 - sleep_efficiency),
     )
+    
+    // AWAKE PERCENTAGE CALCULATION:
+    // Formula: Awake% = max(0, 100% - Sleep Efficiency%)
+    // Logic: If sleep efficiency is 87.5%, then 12.5% of time in bed was spent awake
+    // This includes time falling asleep, brief awakenings, and time before getting up
     const awake_percentage = Math.max(0, 100 - sleep_efficiency)
 
     // Calculate SHIELD score based on your specific rules
@@ -84,9 +119,18 @@ export async function POST(request: NextRequest) {
       .single()
 
     if (error) {
-      console.error("Database error:", error)
+      console.error("Database error:", { user_id, date, error: error.message, operation: isUpdate ? 'update' : 'create' })
       return NextResponse.json({ error: error.message }, { status: 400 })
     }
+
+    // Log successful sleep data creation/update
+    console.log('Sleep data saved successfully:', {
+      user_id,
+      date,
+      shield_score: data.shield_score,
+      sleep_efficiency: data.sleep_efficiency,
+      operation: isUpdate ? 'update' : 'create'
+    })
 
     // Generate health alerts and get suggestions for this specific date
     const suggestions = await generateHealthAlerts(user_id, data, date)
@@ -101,23 +145,40 @@ export async function POST(request: NextRequest) {
       { status: isUpdate ? 200 : 201 },
     )
   } catch (error) {
-    console.error("Sleep data API error:", error)
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 })
+    // Error logging is handled by the security wrapper
+    throw error
   }
 }
 
-export async function GET(request: NextRequest) {
+// Export the secured POST endpoint
+export const POST = withAPISecurity(secureSleepDataHandler, {
+  allowedMethods: ['POST'],
+  validateInput: commonSchemas.sleepData,
+  auditEventType: 'data_modification',
+  riskLevel: 'medium'
+})
+
+async function secureSleepDataGetHandler(
+  request: NextRequest,
+  context: SecurityContext
+): Promise<NextResponse> {
   try {
     const { searchParams } = new URL(request.url)
     const userId = searchParams.get("user_id")
 
     if (!userId) {
+      console.warn('Sleep data access failed: Missing user ID')
       return NextResponse.json({ error: "User ID is required" }, { status: 400 })
     }
 
-    // Calculate date 7 days ago
+    // Set user context for audit logging
+    context.userId = userId
+
+    // ===== DATE RANGE CALCULATION =====
+    // Calculate date 7 days ago for filtering recent sleep data
+    // This limits the dataset to the most recent week for performance and relevance
     const sevenDaysAgo = new Date();
-    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);  // Subtract 7 days from current date
     const sevenDaysAgoString = sevenDaysAgo.toISOString().split('T')[0]; // Format as YYYY-MM-DD
 
     // Get sleep data for the last 7 days only, ordered by date and created_at
@@ -130,71 +191,116 @@ export async function GET(request: NextRequest) {
       .order("created_at", { ascending: false })
 
     if (error) {
+      console.error('Failed to fetch sleep data:', { userId, error: error.message })
       return NextResponse.json({ error: error.message }, { status: 400 })
     }
 
-    // Filter to get only the latest record per unique date
+    // Log successful sleep data access
+    console.log('Sleep data accessed successfully:', {
+      userId,
+      recordCount: allSleepData?.length || 0,
+      dateRange: { from: sevenDaysAgoString, to: new Date().toISOString().split('T')[0] }
+    })
+
+    // ===== DUPLICATE RECORD FILTERING =====
+    // Handle multiple records for the same date by keeping only the most recent
+    // This prevents data inconsistencies when users update sleep data for the same day
     const uniqueDateRecords = new Map<string, any>();
     
     if (allSleepData) {
       allSleepData.forEach((record: any) => {
-        const dateKey = record.date;
-        const currentRecordTime = new Date(record.created_at).getTime();
+        const dateKey = record.date;  // Use date as unique identifier
+        const currentRecordTime = new Date(record.created_at).getTime();  // Convert to timestamp for comparison
         
+        // LOGIC: Keep the most recently created record for each unique date
         // If we haven't seen this date before, or if this record is newer than the stored one
         if (!uniqueDateRecords.has(dateKey)) {
-          uniqueDateRecords.set(dateKey, record);
+          uniqueDateRecords.set(dateKey, record);  // First record for this date
         } else {
           const existingRecordTime = new Date(uniqueDateRecords.get(dateKey)!.created_at).getTime();
           if (currentRecordTime > existingRecordTime) {
-            uniqueDateRecords.set(dateKey, record);
+            uniqueDateRecords.set(dateKey, record);  // Replace with newer record
           }
         }
       });
     }
 
+    // ===== FINAL DATA SORTING =====
     // Convert Map to array and sort by date (most recent first)
+    // This ensures the frontend receives data in chronological order for charts/displays
     const sleepData = Array.from(uniqueDateRecords.values())
       .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
     return NextResponse.json({ sleepData })
   } catch (error) {
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 })
+    // Error logging is handled by the security wrapper
+    throw error
   }
 }
 
-// SHIELD Score calculation function based on your specific rules
+// Export the secured GET endpoint
+export const GET = withAPISecurity(secureSleepDataGetHandler, {
+  allowedMethods: ['GET'],
+  auditEventType: 'data_access',
+  riskLevel: 'low'
+})
+
+// ===== SHIELD SCORE CALCULATION =====
+// SHIELD Score is a comprehensive sleep quality metric (0-100 scale)
+// Higher scores indicate better sleep quality across multiple dimensions
 function calculateShieldScore(
   totalSleepHours: number,
   sleepEfficiency: number,
   remPercentage: number,
   userAge: number,
 ): number {
-  // Start with base score of 100
+  // ===== BASE SCORE =====
+  // Start with perfect score of 100 and deduct points for suboptimal metrics
   let score = 100
 
-  // Rule 1: IF total_sleep_hours < 6 THEN deduct 10 points
+  // ===== RULE 1: SLEEP DURATION PENALTY =====
+  // Deduct 10 points if total sleep < 6 hours
+  // Rationale: Less than 6 hours is associated with significant health risks
+  // including impaired cognitive function, weakened immunity, and increased mortality risk
   if (totalSleepHours < 6) {
-    score -= 10
+    score -= 10  // Major penalty for severe sleep deprivation
   }
 
-  // Rule 2: IF sleep_efficiency < 85 THEN deduct 5 points
+  // ===== RULE 2: SLEEP EFFICIENCY PENALTY =====
+  // Deduct 5 points if sleep efficiency < 85%
+  // Rationale: Low efficiency indicates fragmented sleep, frequent awakenings
+  // Normal healthy adults should achieve 85-95% efficiency
   if (sleepEfficiency < 85) {
-    score -= 5
+    score -= 5   // Moderate penalty for poor sleep consolidation
   }
 
-  // Rule 3: IF REM < 15% THEN deduct 5 points
+  // ===== RULE 3: REM SLEEP PENALTY =====
+  // Deduct 5 points if REM sleep < 15%
+  // Rationale: REM is crucial for memory consolidation, emotional regulation
+  // Normal REM should be 15-25% of total sleep time
   if (remPercentage < 15) {
-    score -= 5
+    score -= 5   // Moderate penalty for insufficient REM sleep
   }
 
-  // Rule 4: IF age > 50 AND sleep_hours < 6 THEN deduct 5 more points
+  // ===== RULE 4: AGE-SPECIFIC PENALTY =====
+  // Additional 5 point deduction for older adults (>50) with short sleep
+  // Rationale: Older adults are more vulnerable to sleep deprivation effects
+  // They have higher risk of cardiovascular disease, cognitive decline
   if (userAge > 50 && totalSleepHours < 6) {
-    score -= 5
+    score -= 5   // Additional penalty for high-risk demographic
   }
 
-  // Ensure score doesn't go below 0
+  // ===== FINAL SCORE BOUNDS =====
+  // Ensure score stays within valid range (0-100)
+  // Minimum score of 0 represents severely compromised sleep
   return Math.max(0, score)
+  
+  // ===== SCORE INTERPRETATION =====
+  // 95-100: Exceptional sleep quality
+  // 85-94:  Good sleep quality  
+  // 75-84:  Fair sleep quality
+  // 65-74:  Poor sleep quality
+  // <65:    Very poor sleep quality requiring intervention
 }
 
 async function generateHealthAlerts(userId: string, sleepData: any, sleepDate: string) {

@@ -143,7 +143,9 @@ const UserForm = ({ formik }: { formik: FormikProps<FormValues> }) => (
           <DateInput
             value={formik.values.date_of_birth}
             onChange={(value) => formik.setFieldValue("date_of_birth", value)}
-            placeholder="Select date"
+            placeholder="Select date of birth"
+            disableFuture
+            disabled
           />
           {formik.touched.date_of_birth && formik.errors.date_of_birth && (
             <p className="mt-1 text-sm text-red-400">{formik.errors.date_of_birth}</p>
@@ -200,11 +202,18 @@ export function UserEditModal({ isOpen, onClose, user, onUserUpdated }: UserEdit
 
   const handleSubmit = async (values: FormValues) => {
     try {
+      const userInput = {
+        full_name: values.full_name,
+        email: values.email,
+        date_of_birth: values.date_of_birth,
+        sex: values.sex,
+        location: values.location,
+      }
       const result = await updateUserMutation.mutateAsync({
         id: user.id,
-        userData: values
+        userData: userInput
       })
-      onUserUpdated(result.user)
+      onUserUpdated(result)
       onClose()
     } catch (error) {
       // Error is handled by the mutation and displayed via updateUserMutation.error

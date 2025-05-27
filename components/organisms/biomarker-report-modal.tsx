@@ -114,9 +114,9 @@ const LoadingSpinner = ({ message }: { message: string }) => (
 )
 
 const SkeletonLoader = () => (
-  <div className="space-y-8 animate-pulse">
+  <div className="space-y-8">
     {/* Health Score Skeleton */}
-    <div className="bg-white/5 rounded-xl p-6 border border-white/10">
+    <div className="bg-white/5 rounded-xl p-6 border border-white/10 animate-pulse">
       <div className="flex items-center justify-between mb-4">
         <div className="h-6 bg-white/10 rounded w-48"></div>
         <div className="h-4 bg-white/10 rounded w-24"></div>
@@ -125,16 +125,16 @@ const SkeletonLoader = () => (
         <div className="h-16 w-24 bg-white/10 rounded"></div>
         <div className="flex-1">
           <div className="w-full bg-gray-700 rounded-full h-3 mb-2">
-            <div className="h-3 bg-white/10 rounded-full w-3/4"></div>
+            <div className="h-3 bg-gradient-to-r from-white/10 via-white/20 to-white/10 rounded-full w-3/4 animate-shimmer"></div>
           </div>
-          <div className="h-4 bg-white/10 rounded w-full"></div>
-          <div className="h-4 bg-white/10 rounded w-2/3 mt-1"></div>
+          <div className="h-4 bg-white/10 rounded w-full mb-1"></div>
+          <div className="h-4 bg-white/10 rounded w-2/3"></div>
         </div>
       </div>
     </div>
 
     {/* Risk Factors Skeleton */}
-    <div className="bg-red-500/10 rounded-xl p-6 border border-red-400/20">
+    <div className="bg-red-500/10 rounded-xl p-6 border border-red-400/20 animate-pulse">
       <div className="flex items-center space-x-2 mb-4">
         <div className="h-6 w-6 bg-red-400/30 rounded"></div>
         <div className="h-6 bg-red-400/30 rounded w-32"></div>
@@ -147,11 +147,11 @@ const SkeletonLoader = () => (
     </div>
 
     {/* Biomarkers Skeleton */}
-    <div>
+    <div className="animate-pulse">
       <div className="h-7 bg-white/10 rounded w-48 mb-6"></div>
       <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
-        {[...Array(6)].map((_, index) => (
-          <div key={index} className="bg-white/5 rounded-xl p-5 border border-white/10">
+        {[...Array(9)].map((_, index) => (
+          <div key={index} className="bg-white/5 rounded-xl p-5 border border-white/10 animate-pulse" style={{ animationDelay: `${index * 100}ms` }}>
             {/* Header */}
             <div className="flex items-start justify-between mb-3">
               <div className="flex items-center space-x-3">
@@ -200,14 +200,14 @@ const SkeletonLoader = () => (
     </div>
 
     {/* Recommendations Skeleton */}
-    <div className="bg-blue-500/10 rounded-xl p-6 border border-blue-400/20">
+    <div className="bg-blue-500/10 rounded-xl p-6 border border-blue-400/20 animate-pulse">
       <div className="flex items-center space-x-2 mb-4">
         <div className="h-6 w-6 bg-blue-400/30 rounded"></div>
         <div className="h-6 bg-blue-400/30 rounded w-48"></div>
       </div>
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {[...Array(4)].map((_, index) => (
-          <div key={index} className="flex items-start space-x-2">
+        {[...Array(6)].map((_, index) => (
+          <div key={index} className="flex items-start space-x-2" style={{ animationDelay: `${index * 150}ms` }}>
             <div className="h-4 w-4 bg-blue-400/30 rounded mt-0.5"></div>
             <div className="flex-1">
               <div className="h-4 bg-blue-400/20 rounded w-full mb-1"></div>
@@ -215,6 +215,14 @@ const SkeletonLoader = () => (
             </div>
           </div>
         ))}
+      </div>
+    </div>
+
+    {/* Loading indicator */}
+    <div className="flex items-center justify-center py-8">
+      <div className="flex items-center space-x-3">
+        <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-cyan-400"></div>
+        <span className="text-gray-400 text-sm">Analyzing biomarkers...</span>
       </div>
     </div>
   </div>
@@ -394,18 +402,18 @@ export function BiomarkerReportModal({ reportId, isOpen, onClose }: BiomarkerRep
 
   useEffect(() => {
     if (isOpen && reportId) {
+      // Reset state when modal opens
+      setAnalysis(null)
+      setError(null)
+      setLoading(true) // Set loading to true immediately
       fetchBiomarkerAnalysis()
-    }
-  }, [isOpen, reportId])
-
-  // Reset state when modal opens
-  useEffect(() => {
-    if (isOpen) {
+    } else if (!isOpen) {
+      // Reset state when modal closes
       setAnalysis(null)
       setError(null)
       setLoading(false)
     }
-  }, [isOpen])
+  }, [isOpen, reportId])
 
   const fetchBiomarkerAnalysis = async () => {
     setLoading(true)
@@ -441,10 +449,31 @@ export function BiomarkerReportModal({ reportId, isOpen, onClose }: BiomarkerRep
 
         {/* Content */}
         <div className="flex-1 overflow-y-auto p-6 min-h-0">
-          {loading && <SkeletonLoader />}
-          
-          {!loading && !error && analysis && (
+          {loading ? (
+            <SkeletonLoader />
+          ) : error ? (
+            <div className="flex flex-col items-center justify-center h-full py-12">
+              <AlertTriangle className="h-16 w-16 text-red-400 mb-4" />
+              <h3 className="text-xl font-semibold text-white mb-2">Failed to Load Analysis</h3>
+              <p className="text-gray-400 text-center max-w-md mb-6">
+                We couldn't load the biomarker analysis. This might be due to a network issue or the report is still being processed.
+              </p>
+              <Button
+                onClick={fetchBiomarkerAnalysis}
+                className="bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-600 hover:to-blue-600"
+              >
+                Try Again
+              </Button>
+            </div>
+          ) : analysis ? (
             <AnalysisContent analysis={analysis} />
+          ) : (
+            <div className="flex items-center justify-center h-full">
+              <div className="text-center">
+                <Activity className="h-16 w-16 text-gray-400 mx-auto mb-4" />
+                <p className="text-gray-400">No analysis data available</p>
+              </div>
+            </div>
           )}
         </div>
 

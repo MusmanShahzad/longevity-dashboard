@@ -77,6 +77,23 @@ const BiomarkerItem = ({ biomarker }: { biomarker: Biomarker & { lastUpdated?: s
   </div>
 )
 
+const BiomarkerList = ({ biomarkers, maxItems = 5, title }: { 
+  biomarkers: Biomarker[]; 
+  maxItems?: number; 
+  title?: string;
+}) => (
+  <div className="space-y-2">
+    {biomarkers.slice(0, maxItems).map((biomarker, index) => (
+      <BiomarkerItem key={`${title}-${biomarker.name}-${index}`} biomarker={biomarker} />
+    ))}
+    {biomarkers.length > maxItems && (
+      <div className="text-xs text-gray-400 text-center py-2">
+        +{biomarkers.length - maxItems} more {title ? title.toLowerCase() : ''} biomarkers
+      </div>
+    )}
+  </div>
+)
+
 const HealthScoreDisplay = ({ score, riskLevel }: { score: number; riskLevel: string }) => {
   const getScoreColor = (score: number) => {
     if (score >= 80) return 'text-green-400'
@@ -124,16 +141,7 @@ const CategorySection = ({ title, biomarkers, icon }: {
         <h4 className="text-sm font-medium text-white">{title}</h4>
         <span className="text-xs text-gray-400">({biomarkers.length})</span>
       </div>
-      <div className="space-y-2">
-        {biomarkers.slice(0, 3).map((biomarker, index) => (
-          <BiomarkerItem key={`${biomarker.name}-${index}`} biomarker={biomarker} />
-        ))}
-        {biomarkers.length > 3 && (
-          <div className="text-xs text-gray-400 text-center py-2">
-            +{biomarkers.length - 3} more {title.toLowerCase()} biomarkers
-          </div>
-        )}
-      </div>
+      <BiomarkerList biomarkers={biomarkers} title={title} />
     </div>
   )
 }
@@ -158,6 +166,29 @@ const InsightItem = ({ insight }: { insight: string }) => {
   )
 }
 
+const InsightList = ({ insights, maxItems = 5 }: { insights: string[]; maxItems?: number }) => (
+  <div className="space-y-2">
+    {insights.slice(0, maxItems).map((insight, index) => (
+      <InsightItem key={index} insight={insight} />
+    ))}
+    {insights.length > maxItems && (
+      <div className="text-xs text-gray-400 text-center py-2">
+        +{insights.length - maxItems} more insights
+      </div>
+    )}
+  </div>
+)
+
+const ActionList = ({ actions }: { actions: string[] }) => (
+  <div className="space-y-2">
+    {actions.map((action, index) => (
+      <div key={index} className="p-3 rounded-lg bg-blue-500/10 border border-blue-400/20 text-blue-300 text-sm">
+        {action}
+      </div>
+    ))}
+  </div>
+)
+
 export function BiomarkerAnalysisCard({ userId }: BiomarkerAnalysisCardProps) {
   const { data, isLoading, error, refreshBiomarkers } = useBiomarkersWithRefresh(userId)
 
@@ -179,13 +210,14 @@ export function BiomarkerAnalysisCard({ userId }: BiomarkerAnalysisCardProps) {
 
   if (isLoading) {
     return (
-      <GlassCard className="p-6">
+      <GlassCard className="p-6 h-[600px] flex flex-col">
         <div className="flex items-center space-x-2 mb-4">
           <Activity className="h-6 w-6 text-green-400" />
           <h3 className="text-lg font-semibold text-white">Biomarker Analysis</h3>
         </div>
-        <div className="animate-pulse space-y-4">
+        <div className="animate-pulse space-y-4 flex-1">
           <div className="h-16 bg-white/10 rounded"></div>
+          <div className="h-20 bg-white/10 rounded"></div>
           <div className="h-20 bg-white/10 rounded"></div>
           <div className="h-20 bg-white/10 rounded"></div>
         </div>
@@ -195,12 +227,12 @@ export function BiomarkerAnalysisCard({ userId }: BiomarkerAnalysisCardProps) {
 
   if (error) {
     return (
-      <GlassCard className="p-6">
+      <GlassCard className="p-6 h-[600px] flex flex-col">
         <div className="flex items-center space-x-2 mb-4">
           <Activity className="h-6 w-6 text-green-400" />
           <h3 className="text-lg font-semibold text-white">Biomarker Analysis</h3>
         </div>
-        <div className="text-center py-8">
+        <div className="text-center py-8 flex-1 flex flex-col justify-center">
           <AlertTriangle className="h-12 w-12 text-red-400 mx-auto mb-3" />
           <p className="text-red-400 mb-4">{error.message}</p>
           <Button
@@ -218,12 +250,12 @@ export function BiomarkerAnalysisCard({ userId }: BiomarkerAnalysisCardProps) {
 
   if (!analysis || analysis.summary.totalBiomarkers === 0) {
     return (
-      <GlassCard className="p-6">
+      <GlassCard className="p-6 h-[600px] flex flex-col">
         <div className="flex items-center space-x-2 mb-4">
           <Activity className="h-6 w-6 text-green-400" />
           <h3 className="text-lg font-semibold text-white">Biomarker Analysis</h3>
         </div>
-        <div className="text-center py-8">
+        <div className="text-center py-8 flex-1 flex flex-col justify-center">
           <Eye className="h-12 w-12 text-gray-400 mx-auto mb-3" />
           <h4 className="text-lg font-semibold text-white mb-2">No Biomarker Data</h4>
           <p className="text-gray-400 text-sm mb-4">
@@ -243,7 +275,7 @@ export function BiomarkerAnalysisCard({ userId }: BiomarkerAnalysisCardProps) {
   }
 
   return (
-    <GlassCard className="p-6">
+    <GlassCard className="p-6 h-[600px] flex flex-col">
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center space-x-2">
           <Activity className="h-6 w-6 text-green-400" />
@@ -271,13 +303,14 @@ export function BiomarkerAnalysisCard({ userId }: BiomarkerAnalysisCardProps) {
         </div>
       </div>
 
-      <div className="space-y-6">
-        {/* Health Score Overview */}
-        <HealthScoreDisplay 
-          score={analysis.healthScore} 
-          riskLevel={analysis.riskLevel} 
-        />
+      {/* Health Score Overview - Fixed at top */}
+      <HealthScoreDisplay 
+        score={analysis.healthScore} 
+        riskLevel={analysis.riskLevel} 
+      />
 
+      {/* Scrollable Content Area */}
+      <div className="flex-1 overflow-y-auto space-y-6 mt-6">
         {/* Critical Biomarkers */}
         {analysis.criticalBiomarkers.length > 0 && (
           <div className="space-y-3">
@@ -285,11 +318,7 @@ export function BiomarkerAnalysisCard({ userId }: BiomarkerAnalysisCardProps) {
               <AlertTriangle className="h-4 w-4" />
               <span>Needs Attention ({analysis.criticalBiomarkers.length})</span>
             </h4>
-            <div className="space-y-2">
-              {analysis.criticalBiomarkers.slice(0, 3).map((biomarker, index) => (
-                <BiomarkerItem key={`critical-${index}`} biomarker={biomarker} />
-              ))}
-            </div>
+            <BiomarkerList biomarkers={analysis.criticalBiomarkers} title="critical" />
           </div>
         )}
 
@@ -297,13 +326,7 @@ export function BiomarkerAnalysisCard({ userId }: BiomarkerAnalysisCardProps) {
         {analysis.priorityActions.length > 0 && (
           <div className="space-y-3">
             <h4 className="text-sm font-medium text-white">Priority Actions</h4>
-            <div className="space-y-2">
-              {analysis.priorityActions.map((action, index) => (
-                <div key={index} className="p-3 rounded-lg bg-blue-500/10 border border-blue-400/20 text-blue-300 text-sm">
-                  {action}
-                </div>
-              ))}
-            </div>
+            <ActionList actions={analysis.priorityActions} />
           </div>
         )}
 
@@ -335,21 +358,16 @@ export function BiomarkerAnalysisCard({ userId }: BiomarkerAnalysisCardProps) {
         {analysis.recentInsights.length > 0 && (
           <div className="space-y-3">
             <h4 className="text-sm font-medium text-white">AI Health Insights</h4>
-            <div className="space-y-2">
-              {analysis.recentInsights.slice(0, 3).map((insight, index) => (
-                <InsightItem key={index} insight={insight} />
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Last Updated */}
-        {data?.lastUpdated && (
-          <div className="text-xs text-gray-400 text-center pt-4 border-t border-white/10">
-            Last updated: {new Date(data.lastUpdated).toLocaleString()}
+            <InsightList insights={analysis.recentInsights} />
           </div>
         )}
       </div>
+      {/* Last Updated */}
+      {data?.lastUpdated && (
+        <div className="text-xs text-gray-400 text-center pt-4 border-t border-white/10">
+          Last updated: {new Date(data.lastUpdated).toLocaleString()}
+        </div>
+      )}
     </GlassCard>
   )
 } 

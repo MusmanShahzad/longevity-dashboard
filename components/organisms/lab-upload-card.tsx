@@ -1,12 +1,14 @@
 "use client"
 
 import type React from "react"
-import { useState } from "react"
-import { Upload, FileText, Plus, CheckCircle, Clock, AlertCircle, Activity, type LucideIcon } from "lucide-react"
+import { useState, useRef, useCallback } from "react"
+import { Upload, FileText, Plus, CheckCircle, Clock, AlertCircle, Activity, X } from "lucide-react"
 import { GlassCard } from "@/components/atoms/glass-card"
 import { Button } from "@/components/ui/button"
 import { useLabReportsWithUpload, type LabReport } from "@/lib/hooks/use-lab-reports"
 import { BiomarkerReportModal } from "./biomarker-report-modal"
+import { cn } from "@/lib/utils"
+import { formatDistanceToNow } from "date-fns"
 
 interface LabUploadCardProps {
   userId: string
@@ -28,10 +30,10 @@ const CardHeader = () => (
   </div>
 )
 
-// Loading skeleton component
+// Optimized loading skeleton component
 const LoadingSkeleton = () => (
-  <div className="animate-pulse">
-    <div className="h-24 bg-white/10 rounded-lg mb-6"></div>
+  <div className="animate-pulse space-y-4">
+    <div className="h-24 bg-white/10 rounded-lg"></div>
     <div className="space-y-3">
       {Array.from({ length: 3 }, (_, i) => (
         <div key={i} className="h-16 bg-white/10 rounded-lg"></div>
@@ -40,34 +42,97 @@ const LoadingSkeleton = () => (
   </div>
 )
 
-// Empty state component
+// Optimized empty state component
 const EmptyState = () => (
-  <div className="text-center py-6">
-    <FileText className="h-12 w-12 text-gray-400 mx-auto mb-3" />
+  <div className="text-center py-8">
+    <div className="relative">
+      <FileText className="h-16 w-16 text-gray-400 mx-auto mb-4 opacity-50" />
+      <div className="absolute inset-0 flex items-center justify-center">
+        <Plus className="h-6 w-6 text-gray-500" />
+      </div>
+    </div>
     <h4 className="text-sm font-medium text-white mb-2">No Lab Reports Yet</h4>
-    <p className="text-xs text-gray-400">Upload your first lab report to get started</p>
+    <p className="text-xs text-gray-400 max-w-xs mx-auto">
+      Upload your first lab report to get AI-powered biomarker analysis and health insights
+    </p>
   </div>
 )
 
-// File upload zone component
+// Enhanced file upload zone with drag & drop
 interface FileUploadZoneProps {
   uploading: boolean
-  onFileUpload: (event: React.ChangeEvent<HTMLInputElement>) => void
+  onFileUpload: (file: File) => void
 }
 
-const FileUploadZone = ({ uploading, onFileUpload }: FileUploadZoneProps) => (
-  <div className="border-2 border-dashed border-gray-600 rounded-lg p-6 text-center mb-6 hover:border-cyan-400 transition-colors">
-    <Upload className="h-8 w-8 text-gray-400 mx-auto mb-3" />
-    <p className="text-sm text-gray-300 mb-3">Upload your latest lab reports for AI analysis</p>
-    <div className="relative">
+const FileUploadZone = ({ uploading, onFileUpload }: FileUploadZoneProps) => {
+  const [isDragOver, setIsDragOver] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    setIsDragOver(true)
+  }, [])
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    setIsDragOver(false)
+  }, [])
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    setIsDragOver(false)
+    
+    const files = Array.from(e.dataTransfer.files)
+    const file = files[0]
+    if (file && isValidFileType(file)) {
+      onFileUpload(file)
+    }
+  }, [onFileUpload])
+
+  const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (file) {
+      onFileUpload(file)
+    }
+    e.target.value = ""
+  }, [onFileUpload])
+
+  const isValidFileType = (file: File) => {
+    const validTypes = ['.pdf', '.jpg', '.jpeg', '.png', '.doc', '.docx']
+    const fileExtension = '.' + file.name.split('.').pop()?.toLowerCase()
+    return validTypes.includes(fileExtension)
+  }
+
+  return (
+    <div 
+      className={cn(
+        "border-2 border-dashed rounded-lg p-6 text-center mb-6 transition-all duration-200",
+        isDragOver 
+          ? "border-cyan-400 bg-cyan-400/10 scale-[1.02]" 
+          : "border-gray-600 hover:border-cyan-400",
+        uploading && "opacity-50 pointer-events-none"
+      )}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+    >
+      <Upload className={cn(
+        "h-8 w-8 mx-auto mb-3 transition-colors",
+        isDragOver ? "text-cyan-400" : "text-gray-400"
+      )} />
+      <p className="text-sm text-gray-300 mb-3">
+        {isDragOver ? "Drop your lab report here" : "Drag & drop or click to upload lab reports"}
+      </p>
       <input
+        ref={fileInputRef}
         type="file"
         accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
-        onChange={onFileUpload}
+        onChange={handleFileSelect}
         disabled={uploading}
-        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer disabled:cursor-not-allowed"
+        className="hidden"
       />
       <Button
+        onClick={() => fileInputRef.current?.click()}
         className="bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-600 hover:to-emerald-600"
         disabled={uploading}
       >
@@ -75,10 +140,10 @@ const FileUploadZone = ({ uploading, onFileUpload }: FileUploadZoneProps) => (
         {uploading ? "Uploading..." : "Upload Lab Report"}
       </Button>
     </div>
-  </div>
-)
+  )
+}
 
-// Lab report item component
+// Optimized lab report item component
 interface LabReportItemProps {
   report: LabReport
   onViewBiomarkers: (reportId: string) => void
@@ -87,37 +152,41 @@ interface LabReportItemProps {
 const LabReportItem = ({ report, onViewBiomarkers }: LabReportItemProps) => {
   const statusConfig = STATUS_CONFIG[report.status as keyof typeof STATUS_CONFIG] || STATUS_CONFIG.default
   const StatusIcon = statusConfig.icon
-  
-  const formatDate = (dateString: string) => 
-    new Date(dateString).toLocaleDateString()
-
   const hasBiomarkers = report.status === 'processed' && report.biomarkers && report.biomarkers.length > 0
+  
+  const formatDate = useCallback((dateString: string) => 
+    new Date(dateString).toLocaleDateString(), [])
+
+  const handleAnalysisClick = useCallback(() => {
+    onViewBiomarkers(report.id)
+  }, [report.id, onViewBiomarkers])
+
+  const handleViewClick = useCallback(() => {
+    if (report.file_url) {
+      window.open(report.file_url, "_blank")
+    }
+  }, [report.file_url])
 
   return (
-    <div className="flex items-center justify-between p-3 rounded-lg bg-white/5 hover:bg-white/10 transition-colors">
-      <div className="flex items-center space-x-3">
-        <FileText className="h-4 w-4 text-cyan-400" />
-        <div>
-          <p className="text-sm font-medium text-white">{report.name}</p>
+    <div className="flex items-center justify-between p-3 rounded-lg bg-white/5 hover:bg-white/10 transition-colors group">
+      <div className="flex items-center space-x-3 min-w-0 flex-1">
+        <FileText className="h-4 w-4 text-cyan-400 flex-shrink-0" />
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-medium text-white truncate">{report.name}</p>
           <div className="flex items-center space-x-2 text-xs text-gray-400">
-            <span>{formatDate(report.uploaded_at)}</span>
-            {hasBiomarkers && (
-              <>
-                <span>•</span>
-                <span className="text-green-400">{report.biomarkers?.length} biomarkers</span>
-              </>
-            )}
+            <span>{formatDistanceToNow(report.uploaded_at)}</span>
           </div>
         </div>
       </div>
-      <div className="flex items-center space-x-2">
-        <StatusIcon className={`h-4 w-4 ${statusConfig.color}`} />
+      
+      <div className="flex items-center space-x-1 flex-shrink-0">
+        <StatusIcon className={cn("h-4 w-4", statusConfig.color)} />
         {hasBiomarkers && (
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => onViewBiomarkers(report.id)}
-            className="text-xs text-green-400 hover:text-green-300"
+            onClick={handleAnalysisClick}
+            className="text-xs text-green-400 hover:text-green-300 px-2"
           >
             <Activity className="h-3 w-3 mr-1" />
             Analysis
@@ -127,8 +196,8 @@ const LabReportItem = ({ report, onViewBiomarkers }: LabReportItemProps) => {
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => window.open(report.file_url, "_blank")}
-            className="text-xs text-cyan-400 hover:text-cyan-300"
+            onClick={handleViewClick}
+            className="text-xs text-cyan-400 hover:text-cyan-300 px-2"
           >
             View
           </Button>
@@ -160,8 +229,7 @@ export function LabUploadCard({ userId }: LabUploadCardProps) {
 
   const labReports = data?.labReports || []
 
-  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0]
+  const handleFileUpload = useCallback(async (file: File) => {
     if (!file) return
 
     try {
@@ -170,10 +238,8 @@ export function LabUploadCard({ userId }: LabUploadCardProps) {
     } catch (error) {
       console.error("Failed to upload lab report:", error)
       alert(`Failed to upload lab report: ${error instanceof Error ? error.message : 'Unknown error'}`)
-    } finally {
-      event.target.value = ""
     }
-  }
+  }, [uploadLabReport])
 
   if (loading) {
     return (
@@ -193,14 +259,20 @@ export function LabUploadCard({ userId }: LabUploadCardProps) {
         <EmptyState />
       ) : (
         <div className="space-y-3">
-          <h4 className="text-sm font-medium text-gray-300">Recent Uploads</h4>
-          {labReports.map((report) => (
-            <LabReportItem 
-              key={report.id} 
-              report={report} 
-              onViewBiomarkers={setSelectedReportId}
-            />
-          ))}
+          <div className="flex items-center justify-between">
+            <h4 className="text-sm font-medium text-gray-300">Recent Uploads</h4>
+            <span className="text-xs text-gray-500">{labReports.length} report{labReports.length !== 1 ? 's' : ''}</span>
+          </div>
+          {/* Scrollable container with fixed height */}
+          <div className="max-h-80 overflow-y-auto space-y-2 pr-2 scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-gray-800">
+            {labReports.map((report) => (
+              <LabReportItem 
+                key={report.id} 
+                report={report} 
+                onViewBiomarkers={setSelectedReportId}
+              />
+            ))}
+          </div>
         </div>
       )}
       

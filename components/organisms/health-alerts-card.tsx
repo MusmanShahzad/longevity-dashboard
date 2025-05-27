@@ -1,13 +1,12 @@
 "use client"
 
-import { useState, useMemo } from "react"
+import { useState, useMemo, useCallback } from "react"
 import { AlertTriangle, Brain, Lightbulb, CheckCircle, Calendar, Eye, ChevronDown, ChevronUp } from "lucide-react"
 import { GlassCard } from "@/components/atoms/glass-card"
 import { Button } from "@/components/ui/button"
 import { SleepDataDetailModal } from "@/components/organisms/sleep-data-detail-modal"
-import { useHealthAlerts } from "@/lib/hooks/use-health-alerts"
+import { useHealthAlerts, type HealthAlert } from "@/lib/hooks/use-health-alerts"
 import { useSleepData } from "@/lib/hooks/use-sleep-data"
-import type { HealthAlert } from "@/lib/supabase"
 
 interface HealthAlertsCardProps {
   userId: string
@@ -31,6 +30,7 @@ const ALERT_CONFIG = {
 
 // Constants
 const INITIAL_DISPLAY_LIMIT = 5
+const MAX_CONTENT_HEIGHT = "600px" // Maximum height before scrolling
 
 // Utility functions
 const formatDateLong = (dateString: string) => {
@@ -46,43 +46,67 @@ const getAlertDate = (alert: HealthAlert) => {
   return alert.sleep_date || new Date(alert.created_at).toISOString().split("T")[0]
 }
 
+const pluralize = (count: number, singular: string, plural?: string) => {
+  return count === 1 ? singular : (plural || `${singular}s`)
+}
+
 // Reusable Components
 const CardHeader = ({ alertCount }: { alertCount: number }) => (
-  <div className="flex items-center space-x-2">
-    <AlertTriangle className="h-6 w-6 text-yellow-400" />
-    <h3 className="text-lg font-semibold text-white">Health Insights & AI Suggestions</h3>
+  <div className="flex items-center justify-between">
+    <div className="flex items-center space-x-2">
+      <AlertTriangle className="h-6 w-6 text-yellow-400" />
+      <h3 className="text-lg font-semibold text-white">Health Insights & AI Suggestions</h3>
+    </div>
+    {alertCount > 0 && (
+      <div className="text-sm text-gray-400">
+        {alertCount} total {pluralize(alertCount, "suggestion")}
+      </div>
+    )}
   </div>
 )
 
 const LoadingSkeleton = () => (
-  <GlassCard className="p-6">
-    <div className="flex items-center justify-between mb-6">
-      <CardHeader alertCount={0} />
-    </div>
-    <div className="animate-pulse space-y-4">
-      {Array.from({ length: 2 }, (_, i) => (
-        <div key={i} className="h-24 bg-white/10 rounded-lg"></div>
-      ))}
-    </div>
-  </GlassCard>
+  <div className="animate-pulse space-y-4">
+    {Array.from({ length: 3 }, (_, i) => (
+      <div key={i} className="h-24 bg-white/10 rounded-lg"></div>
+    ))}
+  </div>
+)
+
+const StateMessage = ({ 
+  icon: Icon, 
+  iconColor, 
+  title, 
+  description 
+}: {
+  icon: React.ComponentType<{ className?: string }>
+  iconColor: string
+  title: string
+  description: string
+}) => (
+  <div className="text-center py-8">
+    <Icon className={`h-12 w-12 ${iconColor} mx-auto mb-3`} />
+    <h4 className="text-lg font-semibold text-white mb-2">{title}</h4>
+    <p className="text-gray-400 text-sm">{description}</p>
+  </div>
 )
 
 const EmptyState = () => (
-  <div className="text-center py-8">
-    <CheckCircle className="h-12 w-12 text-green-400 mx-auto mb-3" />
-    <h4 className="text-lg font-semibold text-white mb-2">All Good!</h4>
-    <p className="text-gray-400 text-sm">
-      No health alerts at the moment. Keep adding sleep data to get personalized insights.
-    </p>
-  </div>
+  <StateMessage
+    icon={CheckCircle}
+    iconColor="text-green-400"
+    title="All Good!"
+    description="No health alerts at the moment. Keep adding sleep data to get personalized insights."
+  />
 )
 
 const ErrorState = ({ error }: { error: Error }) => (
-  <div className="text-center py-8">
-    <div className="text-red-400 text-xl mb-4">⚠️</div>
-    <h4 className="text-lg font-semibold text-white mb-2">Failed to Load Health Alerts</h4>
-    <p className="text-gray-400 text-sm">{error.message}</p>
-  </div>
+  <StateMessage
+    icon={() => <div className="text-red-400 text-xl">⚠️</div>}
+    iconColor=""
+    title="Failed to Load Health Alerts"
+    description={error.message}
+  />
 )
 
 const AlertItem = ({ 
@@ -94,27 +118,32 @@ const AlertItem = ({
 }) => {
   const config = ALERT_CONFIG[alert.type as keyof typeof ALERT_CONFIG] || ALERT_CONFIG.default
   const Icon = config.icon
+  const isClickable = !!alert.sleep_data
 
   return (
     <div
       className={`p-3 rounded-lg bg-white/5 border border-white/10 transition-all duration-200 ${
-        alert.sleep_data ? "hover:bg-white/10 cursor-pointer" : ""
+        isClickable ? "hover:bg-white/10 cursor-pointer" : ""
       }`}
-      onClick={() => alert.sleep_data && onAlertClick(alert)}
+      onClick={() => isClickable && onAlertClick(alert)}
     >
       <div className="flex items-start space-x-3">
-        <Icon className={`h-4 w-4 mt-0.5 ${config.color}`} />
-        <div className="flex-1 space-y-2">
+        <Icon className={`h-4 w-4 mt-0.5 ${config.color} flex-shrink-0`} />
+        <div className="flex-1 space-y-2 min-w-0">
           <div>
-            <h5 className="text-sm font-medium text-white">{alert.title}</h5>
-            <p className="text-xs text-gray-300">{alert.description}</p>
+            <h5 className="text-sm font-medium text-white truncate">{alert.title}</h5>
+            {alert.description && (
+              <p className="text-xs text-gray-300 line-clamp-2">{alert.description}</p>
+            )}
           </div>
-          <div className="p-2 rounded bg-cyan-500/10 border border-cyan-500/20">
-            <p className="text-xs text-cyan-300">
-              <span className="font-medium">💡 AI Suggestion:</span> {alert.suggestion}
-            </p>
-          </div>
-          {alert.sleep_data && (
+          {alert.suggestion && (
+            <div className="p-2 rounded bg-cyan-500/10 border border-cyan-500/20">
+              <p className="text-xs text-cyan-300">
+                <span className="font-medium">💡 AI Suggestion:</span> {alert.suggestion}
+              </p>
+            </div>
+          )}
+          {isClickable && (
             <div className="text-xs text-blue-400 flex items-center space-x-1">
               <Eye className="h-3 w-3" />
               <span>Click to view sleep data details</span>
@@ -140,7 +169,7 @@ const DateGroup = ({
   onAlertClick: (alert: AlertWithSleepData) => void
 }) => {
   const hasData = alerts.some((alert) => alert.sleep_data)
-  const suggestionText = `${alerts.length} suggestion${alerts.length !== 1 ? "s" : ""}`
+  const suggestionText = `${alerts.length} ${pluralize(alerts.length, "suggestion")}`
 
   return (
     <div className="border border-white/10 rounded-lg overflow-hidden">
@@ -149,17 +178,17 @@ const DateGroup = ({
         className="flex items-center justify-between p-4 bg-white/5 cursor-pointer hover:bg-white/10 transition-colors"
         onClick={onToggle}
       >
-        <div className="flex items-center space-x-3">
-          <Calendar className="h-5 w-5 text-cyan-400" />
-          <div>
-            <h4 className="text-sm font-medium text-white">{formatDateLong(date)}</h4>
+        <div className="flex items-center space-x-3 flex-1 min-w-0">
+          <Calendar className="h-5 w-5 text-cyan-400 flex-shrink-0" />
+          <div className="min-w-0">
+            <h4 className="text-sm font-medium text-white truncate">{formatDateLong(date)}</h4>
             <p className="text-xs text-gray-400">
               {suggestionText}
               {hasData && " • Click to view sleep data"}
             </p>
           </div>
         </div>
-        <div className="flex items-center space-x-2">
+        <div className="flex items-center space-x-2 flex-shrink-0">
           {hasData && <Eye className="h-4 w-4 text-blue-400" />}
           {isExpanded ? (
             <ChevronUp className="h-5 w-5 text-gray-400" />
@@ -171,12 +200,41 @@ const DateGroup = ({
 
       {/* Suggestions for this date */}
       {isExpanded && (
-        <div className="p-4 space-y-3 bg-white/2">
+        <div className="p-4 space-y-3 bg-white/2 max-h-80 overflow-y-auto">
           {alerts.map((alert) => (
             <AlertItem key={alert.id} alert={alert} onAlertClick={onAlertClick} />
           ))}
         </div>
       )}
+    </div>
+  )
+}
+
+const ShowMoreButton = ({ 
+  showAll, 
+  totalCount, 
+  visibleCount, 
+  onToggle 
+}: {
+  showAll: boolean
+  totalCount: number
+  visibleCount: number
+  onToggle: () => void
+}) => {
+  if (totalCount <= visibleCount) return null
+
+  return (
+    <div className="text-center pt-4">
+      <Button
+        variant="outline"
+        onClick={onToggle}
+        className="border-gray-600 text-gray-300 hover:bg-white/5"
+      >
+        {showAll 
+          ? "Show Recent" 
+          : `View ${totalCount - visibleCount} More ${pluralize(totalCount - visibleCount, "Day")}`
+        }
+      </Button>
     </div>
   )
 }
@@ -201,13 +259,12 @@ export function HealthAlertsCard({ userId }: HealthAlertsCardProps) {
 
   const alerts = healthAlertsData?.alerts || []
   const sleepData = sleepDataResponse?.sleepData || []
-
   const isLoading = alertsLoading || sleepLoading
 
   // Memoized processed data
   const { alertsWithSleepData, groupedAlerts, sortedDates } = useMemo(() => {
-    // Process alerts with sleep data
-    const processedAlerts: AlertWithSleepData[] = alerts.map((alert: HealthAlert) => {
+    // Process alerts with sleep data - fix TypeScript error by ensuring proper typing
+    const processedAlerts: AlertWithSleepData[] = alerts.map((alert) => {
       const alertDate = getAlertDate(alert)
       const matchingSleepData = sleepData.find((sleep: any) => sleep.date === alertDate)
 
@@ -244,14 +301,15 @@ export function HealthAlertsCard({ userId }: HealthAlertsCardProps) {
 
   const displayDates = showAllAlerts ? sortedDates : sortedDates.slice(0, INITIAL_DISPLAY_LIMIT)
 
-  const handleAlertClick = (alert: AlertWithSleepData) => {
+  // Event handlers
+  const handleAlertClick = useCallback((alert: AlertWithSleepData) => {
     if (alert.sleep_data) {
       setSelectedAlert(alert)
       setIsDetailModalOpen(true)
     }
-  }
+  }, [])
 
-  const toggleDateExpansion = (date: string) => {
+  const toggleDateExpansion = useCallback((date: string) => {
     setExpandedDates((prev) => {
       const newSet = new Set(prev)
       if (newSet.has(date)) {
@@ -261,79 +319,69 @@ export function HealthAlertsCard({ userId }: HealthAlertsCardProps) {
       }
       return newSet
     })
-  }
+  }, [])
+
+  const toggleShowAllAlerts = useCallback(() => {
+    setShowAllAlerts(prev => !prev)
+  }, [])
 
   // Render content based on state
-  const renderContent = () => {
-    if (isLoading) return <LoadingSkeleton />
-    
-    if (alertsError) {
-      return (
-        <GlassCard className="p-6">
-          <div className="flex items-center justify-between mb-6">
-            <CardHeader alertCount={0} />
-          </div>
-          <ErrorState error={alertsError} />
-        </GlassCard>
-      )
-    }
-
+  if (isLoading) {
     return (
       <GlassCard className="p-6">
-        <div className="flex items-center justify-between mb-6">
-          <CardHeader alertCount={alertsWithSleepData.length} />
-          {alertsWithSleepData.length > 0 && (
-            <div className="flex items-center space-x-2">
-              <span className="text-sm text-gray-400">{alertsWithSleepData.length} total suggestions</span>
-              {sortedDates.length > INITIAL_DISPLAY_LIMIT && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setShowAllAlerts(!showAllAlerts)}
-                  className="border-cyan-400 text-cyan-400 hover:bg-cyan-400/10"
-                >
-                  {showAllAlerts ? "Show Recent" : `Show All (${sortedDates.length} days)`}
-                </Button>
-              )}
-            </div>
-          )}
+        <CardHeader alertCount={0} />
+        <div className="mt-6">
+          <LoadingSkeleton />
         </div>
+      </GlassCard>
+    )
+  }
 
-        {alertsWithSleepData.length === 0 ? (
-          <EmptyState />
-        ) : (
-          <div className="space-y-4">
-            {displayDates.map((date) => (
-              <DateGroup
-                key={date}
-                date={date}
-                alerts={groupedAlerts[date]}
-                isExpanded={expandedDates.has(date)}
-                onToggle={() => toggleDateExpansion(date)}
-                onAlertClick={handleAlertClick}
-              />
-            ))}
-
-            {!showAllAlerts && sortedDates.length > INITIAL_DISPLAY_LIMIT && (
-              <div className="text-center pt-4">
-                <Button
-                  variant="outline"
-                  onClick={() => setShowAllAlerts(true)}
-                  className="border-gray-600 text-gray-300 hover:bg-white/5"
-                >
-                  View {sortedDates.length - INITIAL_DISPLAY_LIMIT} More Days
-                </Button>
-              </div>
-            )}
-          </div>
-        )}
+  if (alertsError) {
+    return (
+      <GlassCard className="p-6">
+        <CardHeader alertCount={0} />
+        <ErrorState error={alertsError} />
       </GlassCard>
     )
   }
 
   return (
     <>
-      {renderContent()}
+      <GlassCard className="p-6">
+        <CardHeader alertCount={alertsWithSleepData.length} />
+
+        {alertsWithSleepData.length === 0 ? (
+          <EmptyState />
+        ) : (
+          <div className="mt-6">
+            {/* Scrollable content area */}
+            <div 
+              className="space-y-4 overflow-y-auto pr-2"
+              style={{ maxHeight: MAX_CONTENT_HEIGHT }}
+            >
+              {displayDates.map((date) => (
+                <DateGroup
+                  key={date}
+                  date={date}
+                  alerts={groupedAlerts[date]}
+                  isExpanded={expandedDates.has(date)}
+                  onToggle={() => toggleDateExpansion(date)}
+                  onAlertClick={handleAlertClick}
+                />
+              ))}
+            </div>
+
+            {/* Show more/less button */}
+            <ShowMoreButton
+              showAll={showAllAlerts}
+              totalCount={sortedDates.length}
+              visibleCount={INITIAL_DISPLAY_LIMIT}
+              onToggle={toggleShowAllAlerts}
+            />
+          </div>
+        )}
+      </GlassCard>
       
       {/* Sleep Data Detail Modal */}
       <SleepDataDetailModal

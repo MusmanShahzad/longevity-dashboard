@@ -150,7 +150,8 @@ const UserForm = ({ formik }: { formik: FormikProps<FormValues> }) => (
           <DateInput
             value={formik.values.date_of_birth}
             onChange={(value) => formik.setFieldValue("date_of_birth", value)}
-            placeholder="Select date"
+            placeholder="Select date of birth"
+            disableFuture={true}
           />
           {formik.touched.date_of_birth && formik.errors.date_of_birth && (
             <p className="mt-1 text-sm text-red-400">{formik.errors.date_of_birth}</p>
@@ -196,8 +197,15 @@ export function UserCreationModal({ isOpen, onClose, onUserCreated }: UserCreati
 
   const handleSubmit = async (values: FormValues) => {
     try {
-      const result = await createUserMutation.mutateAsync(values)
-      onUserCreated(result.user)
+      const userInput = {
+        full_name: values.full_name,
+        email: values.email,
+        date_of_birth: values.date_of_birth,
+        sex: values.sex,
+        location: values.location,
+      }
+      const result = await createUserMutation.mutateAsync(userInput)
+      onUserCreated(result)
       onClose()
     } catch (error) {
       // Error is handled by the mutation and displayed via createUserMutation.error

@@ -7,7 +7,7 @@ import { Formik, Form, type FormikProps } from "formik"
 import * as Yup from "yup"
 import { 
   X, Activity, Moon, Calendar, Lightbulb, AlertTriangle, 
-  CheckCircle, AlertCircle, History 
+  CheckCircle, AlertCircle, History, ArrowLeft 
 } from "lucide-react"
 import { Modal } from "@/components/molecules/modal"
 import { FormGroup } from "@/components/molecules/form-group"
@@ -120,28 +120,44 @@ const ModalHeader = ({
   formValues, 
   currentUser, 
   savedSuggestionsCount, 
-  onClose 
+  showSuggestions,
+  onClose,
+  onBack 
 }: {
   isUpdating: boolean
   formValues: FormValues
   currentUser: User | null
   savedSuggestionsCount: number
+  showSuggestions: boolean
   onClose: () => void
+  onBack?: () => void
 }) => (
   <div className="flex-shrink-0 p-6 border-b border-white/10">
     <div className="flex items-center justify-between">
       <div className="flex items-center space-x-3">
-        <div className="p-2 rounded-lg bg-gradient-to-br from-cyan-500 to-blue-500">
-          <Activity className="h-6 w-6 text-white" />
+        <div className={`p-2 rounded-lg ${showSuggestions 
+          ? 'bg-gradient-to-br from-green-500 to-emerald-500' 
+          : 'bg-gradient-to-br from-cyan-500 to-blue-500'
+        }`}>
+          {showSuggestions ? (
+            <Lightbulb className="h-6 w-6 text-white" />
+          ) : (
+            <Activity className="h-6 w-6 text-white" />
+          )}
         </div>
         <div>
           <h2 className="text-2xl font-bold text-white">
-            {isUpdating ? "Update Sleep Data" : "Add Sleep Data"}
+            {showSuggestions 
+              ? "AI Health Insights" 
+              : isUpdating ? "Update Sleep Data" : "Add Sleep Data"
+            }
           </h2>
           <p className="text-sm text-cyan-300">
-            {isUpdating
-              ? `Update sleep information for ${new Date(formValues.date).toLocaleDateString()}`
-              : `Record your sleep information for ${currentUser?.full_name}`}
+            {showSuggestions
+              ? `Personalized recommendations for ${new Date(formValues.date).toLocaleDateString()}`
+              : isUpdating
+                ? `Update sleep information for ${new Date(formValues.date).toLocaleDateString()}`
+                : `Record your sleep information for ${currentUser?.full_name}`}
           </p>
           {savedSuggestionsCount > 0 && (
             <div className="flex items-center space-x-1 mt-1">
@@ -153,14 +169,27 @@ const ModalHeader = ({
           )}
         </div>
       </div>
-      <Button
-        variant="ghost"
-        size="icon"
-        onClick={onClose}
-        className="text-gray-400 hover:text-white hover:bg-white/10"
-      >
-        <X className="h-5 w-5" />
-      </Button>
+      <div className="flex items-center space-x-2">
+        {showSuggestions && onBack && (
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={onBack}
+            className="text-gray-400 hover:text-white hover:bg-white/10"
+            title="Back to form"
+          >
+            <ArrowLeft className="h-5 w-5" />
+          </Button>
+        )}
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={onClose}
+          className="text-gray-400 hover:text-white hover:bg-white/10"
+        >
+          <X className="h-5 w-5" />
+        </Button>
+      </div>
     </div>
   </div>
 )
@@ -192,11 +221,13 @@ const SuggestionItem = ({ suggestion, index }: { suggestion: Suggestion, index: 
 const SuggestionsView = ({ 
   suggestions, 
   formValues, 
-  onClose 
+  onClose,
+  onBack 
 }: { 
   suggestions: Suggestion[]
   formValues: FormValues
-  onClose: () => void 
+  onClose: () => void
+  onBack: () => void
 }) => (
   <div className="space-y-6">
     <div className="text-center">
@@ -234,11 +265,19 @@ const SuggestionsView = ({
 
     <div className="text-center">
       <p className="text-sm text-gray-400">
-        These suggestions have been saved to your Health Insights and are organized by date. Modal will close automatically.
+        These suggestions have been saved to your Health Insights and are organized by date.
       </p>
     </div>
 
-    <div className="flex justify-center">
+    <div className="flex flex-col sm:flex-row gap-3 justify-center">
+      <Button
+        onClick={onBack}
+        variant="outline"
+        className="border-gray-600 text-gray-300 hover:bg-white/5"
+      >
+        <ArrowLeft className="h-4 w-4 mr-2" />
+        Back to Form
+      </Button>
       <Button
         onClick={onClose}
         className="bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-600 hover:to-blue-600"
@@ -271,6 +310,7 @@ const SleepForm = ({
             onDateChange(value)
           }}
           placeholder="Select date"
+          disableFuture={true}
         />
         {formik.touched.date && formik.errors.date && (
           <p className="mt-1 text-sm text-red-400">{formik.errors.date}</p>
@@ -406,20 +446,22 @@ export function HealthDataModal({ isOpen, onClose, currentUser, onDataUpdate }: 
     }
   }, [])
 
-  // Reset modal state when opened
+  // Reset modal state when opened (but preserve suggestions if they exist)
   useEffect(() => {
     if (isOpen) {
-      setModalState({
+      setModalState(prev => ({
         isUpdating: false,
-        backendSuggestions: [],
-        showSuggestions: false,
+        backendSuggestions: prev.showSuggestions ? prev.backendSuggestions : [],
+        showSuggestions: prev.showSuggestions || false,
         isCheckingData: false,
         savedSuggestionsCount: healthAlertsData?.alerts?.length || 0,
-        shieldScore: 0,
+        shieldScore: prev.showSuggestions ? prev.shieldScore : 0,
         error: "",
-        success: ""
-      })
-      setSleepEfficiency(0)
+        success: prev.showSuggestions ? prev.success : ""
+      }))
+      if (!modalState.showSuggestions) {
+        setSleepEfficiency(0)
+      }
     }
   }, [isOpen, healthAlertsData])
 
@@ -484,9 +526,8 @@ export function HealthDataModal({ isOpen, onClose, currentUser, onDataUpdate }: 
         savedSuggestionsCount: prev.savedSuggestionsCount + (data.suggestions?.length || 0)
       }))
 
-      if (onDataUpdate) {
-        onDataUpdate()
-      }
+      // Don't refresh data immediately - wait until modal is closed
+      // This allows users to see AI suggestions without data refresh interference
     } catch (error) {
       console.error("Failed to save sleep data:", error)
       setModalState(prev => ({
@@ -495,6 +536,15 @@ export function HealthDataModal({ isOpen, onClose, currentUser, onDataUpdate }: 
       }))
     }
   }
+
+  const handleBackToForm = useCallback(() => {
+    setModalState(prev => ({
+      ...prev,
+      showSuggestions: false,
+      error: "",
+      success: ""
+    }))
+  }, [])
 
   return (
     <Modal isOpen={isOpen} onClose={onClose}>
@@ -531,14 +581,16 @@ export function HealthDataModal({ isOpen, onClose, currentUser, onDataUpdate }: 
                   formValues={formik.values}
                   currentUser={currentUser}
                   savedSuggestionsCount={modalState.savedSuggestionsCount}
+                  showSuggestions={modalState.showSuggestions}
                   onClose={onClose}
+                  onBack={handleBackToForm}
                 />
 
                 {/* Status Messages */}
                 <div className="flex-shrink-0 px-6">
                   {modalState.error && <StatusMessage type="error" message={modalState.error} />}
-                  {modalState.success && <StatusMessage type="success" message={modalState.success} />}
-                  {modalState.isUpdating && !modalState.isCheckingData && (
+                  {modalState.success && !modalState.showSuggestions && <StatusMessage type="success" message={modalState.success} />}
+                  {modalState.isUpdating && !modalState.isCheckingData && !modalState.showSuggestions && (
                     <StatusMessage 
                       type="warning" 
                       message={`You are updating existing sleep data for ${new Date(formik.values.date).toLocaleDateString()}`} 
@@ -562,6 +614,7 @@ export function HealthDataModal({ isOpen, onClose, currentUser, onDataUpdate }: 
                         suggestions={modalState.backendSuggestions}
                         formValues={formik.values}
                         onClose={onClose}
+                        onBack={handleBackToForm}
                       />
                     </>
                   ) : (

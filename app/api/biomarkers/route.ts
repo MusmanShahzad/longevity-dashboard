@@ -151,12 +151,11 @@ function processLabReports(labReports: any[]) {
       reportsProcessed: reportsWithBiomarkers.length
     },
     latestBiomarkers: Object.values(aggregatedBiomarkers)
-      .sort((a: any, b: any) => new Date(b.lastUpdated).getTime() - new Date(a.lastUpdated).getTime())
-      .slice(0, 10),
-    trendingBiomarkers: trendingBiomarkers.slice(0, 5),
-    criticalBiomarkers: criticalBiomarkers.slice(0, 5),
+      .sort((a: any, b: any) => new Date(b.lastUpdated).getTime() - new Date(a.lastUpdated).getTime()),
+    trendingBiomarkers: trendingBiomarkers,
+    criticalBiomarkers: criticalBiomarkers,
     recentInsights,
-    reportsWithBiomarkers: reportsWithBiomarkers.slice(0, 5), // Latest 5 reports
+    reportsWithBiomarkers: reportsWithBiomarkers, // All reports with biomarkers
     categories: groupBiomarkersByCategory(Object.values(aggregatedBiomarkers))
   }
 }

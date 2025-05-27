@@ -2,6 +2,9 @@
 
 import { useState } from "react"
 import { Activity, Heart, Zap, Flame, Scale, Stethoscope, AlertTriangle, CheckCircle, TrendingUp, TrendingDown, ArrowLeft, FileText, Calendar, Target } from "lucide-react"
+import { PageLayout } from "@/components/layouts/page-layout"
+import { StatsCard } from "@/components/ui/stats-card"
+import { ContentSection } from "@/components/ui/content-section"
 import { GlassCard } from "@/components/atoms/glass-card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -195,38 +198,30 @@ export default function BiomarkersPage({ params }: BiomarkersPageProps) {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-blue-900 to-purple-900 p-6">
-        <div className="max-w-7xl mx-auto">
-          <div className="animate-pulse space-y-6">
-            <div className="h-8 bg-white/10 rounded w-1/3"></div>
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-              {[...Array(4)].map((_, i) => (
-                <div key={i} className="h-32 bg-white/10 rounded"></div>
-              ))}
-            </div>
-            <div className="h-96 bg-white/10 rounded"></div>
-          </div>
+      <div className="animate-pulse space-y-6">
+        <div className="h-8 bg-white/10 rounded w-1/3"></div>
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+          {[...Array(4)].map((_, i) => (
+            <div key={i} className="h-32 bg-white/10 rounded"></div>
+          ))}
         </div>
+        <div className="h-96 bg-white/10 rounded"></div>
       </div>
     )
   }
 
   if (error) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-blue-900 to-purple-900 p-6">
-        <div className="max-w-7xl mx-auto">
-          <div className="text-center py-12">
-            <AlertTriangle className="h-16 w-16 text-red-400 mx-auto mb-4" />
-            <h2 className="text-2xl font-bold text-white mb-2">Error Loading Biomarkers</h2>
-            <p className="text-gray-400 mb-6">{error.message}</p>
-            <Link href={`/user/${userId}`}>
-              <Button variant="outline" className="border-cyan-400 text-cyan-400 hover:bg-cyan-400/10">
-                <ArrowLeft className="h-4 w-4 mr-2" />
-                Back to Dashboard
-              </Button>
-            </Link>
-          </div>
-        </div>
+      <div className="text-center py-12">
+        <AlertTriangle className="h-16 w-16 text-red-400 mx-auto mb-4" />
+        <h2 className="text-2xl font-bold text-white mb-2">Error Loading Biomarkers</h2>
+        <p className="text-gray-400 mb-6">{error.message}</p>
+        <Link href={`/user/${userId}`}>
+          <Button variant="outline" className="border-cyan-400 text-cyan-400 hover:bg-cyan-400/10">
+            <ArrowLeft className="h-4 w-4 mr-2" />
+            Back to Dashboard
+          </Button>
+        </Link>
       </div>
     )
   }
@@ -236,33 +231,30 @@ export default function BiomarkersPage({ params }: BiomarkersPageProps) {
 
   if (!analysis || analysis.summary.totalBiomarkers === 0) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-blue-900 to-purple-900 p-6">
-        <div className="max-w-7xl mx-auto">
-          <div className="flex items-center justify-between mb-8">
-            <div className="flex items-center space-x-4">
-              <Link href={`/user/${userId}`}>
-                <Button variant="ghost" size="sm" className="text-gray-400 hover:text-white">
-                  <ArrowLeft className="h-4 w-4 mr-2" />
-                  Back
-                </Button>
-              </Link>
-              <h1 className="text-3xl font-bold text-white">Biomarker Analysis</h1>
-            </div>
-          </div>
-
-          <div className="text-center py-12">
-            <Activity className="h-16 w-16 text-gray-400 mx-auto mb-4" />
-            <h2 className="text-2xl font-bold text-white mb-2">No Biomarker Data Available</h2>
-            <p className="text-gray-400 mb-6">
-              Upload lab reports to see detailed biomarker analysis and health insights.
-            </p>
+      <div className="space-y-8">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center space-x-4">
             <Link href={`/user/${userId}`}>
-              <Button className="bg-cyan-500 hover:bg-cyan-600 text-white">
-                <Target className="h-4 w-4 mr-2" />
-                Upload Lab Reports
+              <Button variant="ghost" size="sm" className="text-gray-400 hover:text-white">
+                <ArrowLeft className="h-4 w-4 mr-2" />
               </Button>
             </Link>
+            <h1 className="text-3xl font-bold text-white">Biomarker Analysis</h1>
           </div>
+        </div>
+
+        <div className="text-center py-12">
+          <Activity className="h-16 w-16 text-gray-400 mx-auto mb-4" />
+          <h2 className="text-2xl font-bold text-white mb-2">No Biomarker Data Available</h2>
+          <p className="text-gray-400 mb-6">
+            Upload lab reports to see detailed biomarker analysis and health insights.
+          </p>
+          <Link href={`/user/${userId}`}>
+            <Button className="bg-cyan-500 hover:bg-cyan-600 text-white">
+              <Target className="h-4 w-4 mr-2" />
+              Upload Lab Reports
+            </Button>
+          </Link>
         </div>
       </div>
     )
@@ -271,73 +263,55 @@ export default function BiomarkersPage({ params }: BiomarkersPageProps) {
   const { summary, categories, criticalBiomarkers } = analysis
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-blue-900 to-purple-900 p-6">
-      <div className="max-w-7xl mx-auto">
-        {/* Header */}
-        <div className="flex items-center justify-between mb-8">
-          <div className="flex items-center space-x-4">
-            <Link href={`/user/${userId}`}>
-              <Button variant="ghost" size="sm" className="text-gray-400 hover:text-white">
-                <ArrowLeft className="h-4 w-4 mr-2" />
-                Back
-              </Button>
-            </Link>
-            <div>
-              <h1 className="text-3xl font-bold text-white">Biomarker Analysis</h1>
-              <p className="text-gray-400">Comprehensive health insights from your lab reports</p>
-            </div>
-          </div>
-          <div className="text-right">
-            <p className="text-sm text-gray-400">Last updated</p>
-            <p className="text-white">{biomarkerData?.lastUpdated ? new Date(biomarkerData.lastUpdated).toLocaleDateString() : 'N/A'}</p>
-          </div>
-        </div>
-
-        {/* Summary Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-          <SummaryCard
+    <PageLayout
+      title="Biomarker Analysis"
+      subtitle="Comprehensive health insights from your lab reports"
+      icon={<Activity className="h-6 w-6 text-cyan-400" />}
+      showBackButton={true}
+      onBack={() => window.history.back()}
+    >
+      {/* Summary Cards */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 md:gap-6">
+          <StatsCard
             title="Total Biomarkers"
             value={summary.totalBiomarkers}
             subtitle={`From ${summary.reportsProcessed} reports`}
-            icon={<Activity className="h-6 w-6" />}
-            color="text-cyan-400"
+            icon={Activity}
+            iconColor="text-cyan-400"
           />
-          <SummaryCard
+          <StatsCard
             title="Normal Range"
             value={summary.normalCount}
             subtitle={`${Math.round((summary.normalCount / summary.totalBiomarkers) * 100)}% of total`}
-            icon={<CheckCircle className="h-6 w-6" />}
-            color="text-green-400"
+            icon={CheckCircle}
+            iconColor="text-green-400"
           />
-          <SummaryCard
+          <StatsCard
             title="Out of Range"
             value={summary.highCount + summary.lowCount}
             subtitle="Need attention"
-            icon={<AlertTriangle className="h-6 w-6" />}
-            color="text-orange-400"
+            icon={AlertTriangle}
+            iconColor="text-orange-400"
           />
-          <SummaryCard
+          <StatsCard
             title="Critical"
             value={summary.criticalCount}
             subtitle="Immediate action needed"
-            icon={<AlertTriangle className="h-6 w-6" />}
-            color="text-red-400"
+            icon={AlertTriangle}
+            iconColor="text-red-400"
           />
         </div>
 
         {/* Critical Biomarkers Section */}
         {criticalBiomarkers.length > 0 && (
-          <div className="mb-8">
-            <div className="flex items-center space-x-3 mb-4">
-              <AlertTriangle className="h-6 w-6 text-red-400" />
-              <h2 className="text-2xl font-semibold text-white">Critical Biomarkers</h2>
-              <Badge className="bg-red-500/20 text-red-300 border-red-400/30">
-                Immediate Attention Required
-              </Badge>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                           {criticalBiomarkers.map((biomarker, index) => {
-               const report = reports.find((r: any) => r.biomarkers?.some((b: any) => b.name === biomarker.name))
+          <ContentSection
+            title="Critical Biomarkers"
+            icon={AlertTriangle}
+            badge={{ text: "Immediate Attention Required", variant: "error" }}
+          >
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
+              {criticalBiomarkers.map((biomarker, index) => {
+                const report = reports.find((r: any) => r.biomarkers?.some((b: any) => b.name === biomarker.name))
                 return (
                   <BiomarkerCard
                     key={`critical-${index}`}
@@ -349,7 +323,7 @@ export default function BiomarkersPage({ params }: BiomarkersPageProps) {
                 )
               })}
             </div>
-          </div>
+          </ContentSection>
         )}
 
         {/* Category Sections */}
@@ -410,7 +384,6 @@ export default function BiomarkersPage({ params }: BiomarkersPageProps) {
              </div>
            </div>
          )}
-      </div>
-    </div>
+    </PageLayout>
   )
 } 

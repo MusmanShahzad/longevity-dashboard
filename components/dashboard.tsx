@@ -6,7 +6,6 @@ import { SleepChartsCard } from "@/components/organisms/sleep-charts-card"
 import { UserProfileCard } from "@/components/organisms/user-profile-card"
 import { LabUploadCard } from "@/components/organisms/lab-upload-card"
 import { BiomarkerAnalysisCard } from "@/components/organisms/biomarker-analysis-card"
-import { Header } from "@/components/organisms/header"
 import { useUser } from "@/app/contexts/user-context"
 import type { User } from "@/lib/supabase"
 
@@ -35,16 +34,13 @@ export function Dashboard({ currentUser: propCurrentUser }: DashboardProps) {
   // Remove: const handleDataUpdate = () => { setRefreshKey((prev) => prev + 1) }
 
   return (
-    <div className="min-h-screen p-4 md:p-6 lg:p-8">
-      <div className="max-w-7xl mx-auto space-y-6">
-        <Header />
-
-        {/* Main Dashboard Grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-          {/* Left Column */}
-          <div className="lg:col-span-8 space-y-6">
-            {/* Top Row - Key Metrics */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+    <div className="space-y-6">
+            {/* Main Dashboard Grid */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 sm:gap-6">
+        {/* Left Column */}
+        <div className="lg:col-span-8 space-y-4 sm:space-y-6">
+          {/* Top Row - Key Metrics */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">
               <ShieldScoreCard userId={currentUser.id} />
               <BioAgeDeltaCard userId={currentUser.id} />
             </div>
@@ -59,13 +55,12 @@ export function Dashboard({ currentUser: propCurrentUser }: DashboardProps) {
             <BiomarkerAnalysisCard userId={currentUser.id} />
           </div>
 
-          {/* Right Column */}
-          <div className="lg:col-span-4 space-y-6">
+                  {/* Right Column */}
+        <div className="lg:col-span-4 space-y-4 sm:space-y-6">
             <UserProfileCard user={currentUser} />
             <LabUploadCard userId={currentUser.id} />
           </div>
         </div>
       </div>
-    </div>
-  )
+    )
 }

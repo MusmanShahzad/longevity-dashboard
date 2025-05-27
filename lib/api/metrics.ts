@@ -9,6 +9,25 @@ export interface Metrics {
   avgSleepHours: number
   sleepDataCount: number
   dailyShieldScores: Array<{ date: string; score: number; day: string }>
+  bioAgeBreakdown?: {
+    breakdown: {
+      sleepQualityPercentage: number
+      efficiencyScore: number
+      remScore: number
+      durationScore: number
+      ageAdjustmentFactor: number
+      baseModifier: number
+      adjustedModifier: number
+    }
+    recommendations: Array<{
+      category: string
+      current: string
+      target: string
+      priority: 'high' | 'medium' | 'low'
+      impact: string
+      tips: string[]
+    }>
+  } | null
 }
 
 export const fetchUserMetrics = async (userId: string): Promise<Metrics> => {
