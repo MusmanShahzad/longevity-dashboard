@@ -1,133 +1,290 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { z } from 'zod'
 import { supabase } from '@/lib/supabase'
+import { withDataAccess } from '@/lib/optimized-api-wrapper'
 
-export async function GET(request: NextRequest) {
-  try {
-    const { searchParams } = new URL(request.url)
-    const timeRange = searchParams.get('timeRange') || '24h'
-    const riskLevel = searchParams.get('riskLevel') || 'all'
-    const eventType = searchParams.get('eventType') || 'all'
-    const limit = parseInt(searchParams.get('limit') || '100')
+// Enhanced validation schema for audit log queries
+const auditLogsQuerySchema = z.object({
+  // Pagination
+  page: z.string().regex(/^\d+$/).transform(Number).optional(),
+  limit: z.string().regex(/^\d+$/).transform(Number).optional(),
+  
+  // Time range filtering (frontend convenience parameter)
+  timeRange: z.enum(['1h', '6h', '12h', '24h', '7d', '30d', 'all']).optional(),
+  
+  // Filtering
+  user_id: z.string().uuid().optional(),
+  resource_type: z.string().max(50).optional(),
+  event_type: z.enum(['data_access', 'data_modification', 'data_deletion', 'login_attempt', 'logout', 'failed_access', 'export_data', 'print_data', 'biomarker_extraction', 'lab_report_upload', 'health_alert_creation', 'system_maintenance', 'security_event', 'api_request', 'system_access', 'all']).optional(),
+  eventType: z.enum(['data_access', 'data_modification', 'data_deletion', 'login_attempt', 'logout', 'failed_access', 'export_data', 'print_data', 'biomarker_extraction', 'lab_report_upload', 'health_alert_creation', 'system_maintenance', 'security_event', 'api_request', 'system_access', 'all']).optional(), // Frontend alias
+  action: z.string().max(50).optional(),
+  success: z.enum(['true', 'false']).transform(val => val === 'true').optional(),
+  risk_level: z.enum(['low', 'medium', 'high', 'critical', 'all']).optional(),
+  riskLevel: z.enum(['low', 'medium', 'high', 'critical', 'all']).optional(), // Frontend alias
+  ip_address: z.string().ip().optional(),
+  
+  // Date range filtering
+  start_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  end_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  
+  // Search
+  search: z.string().max(100).optional(),
+  api_endpoint: z.string().max(200).optional(),
+  apiEndpoint: z.string().max(200).optional(), // Frontend alias
+  http_method: z.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']).optional(),
+  
+  // Performance filtering
+  min_duration: z.string().regex(/^\d+$/).transform(Number).optional(),
+  max_duration: z.string().regex(/^\d+$/).transform(Number).optional(),
+  cache_hit: z.enum(['true', 'false']).transform(val => val === 'true').optional(),
+  
+  // Sorting
+  sort_by: z.enum(['timestamp', 'duration_ms', 'risk_level', 'user_id']).optional(),
+  sort_order: z.enum(['asc', 'desc']).optional()
+})
 
-    // Calculate time range
-    const now = new Date()
-    let startTime: Date
+// GET /api/audit/logs - Enhanced audit logs retrieval with comprehensive filtering
+export const GET = withDataAccess(
+  async (request, context) => {
+    console.log('🔍 Audit logs API called with query:', context.query)
     
-    switch (timeRange) {
-      case '24h':
-        startTime = new Date(now.getTime() - 24 * 60 * 60 * 1000)
-        break
-      case '7d':
-        startTime = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
-        break
-      case '30d':
-        startTime = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
-        break
-      default:
-        startTime = new Date(now.getTime() - 24 * 60 * 60 * 1000)
+    const {
+      page = 1,
+      limit = 50,
+      timeRange,
+      user_id,
+      resource_type,
+      event_type,
+      eventType, // Frontend alias
+      action,
+      success,
+      risk_level,
+      riskLevel, // Frontend alias
+      ip_address,
+      start_date,
+      end_date,
+      search,
+      api_endpoint,
+      apiEndpoint, // Frontend alias
+      http_method,
+      min_duration,
+      max_duration,
+      cache_hit,
+      sort_by = 'timestamp',
+      sort_order = 'desc'
+    } = context.query
+
+    // Handle frontend aliases and "all" values
+    const normalizedEventType = (event_type || eventType) === 'all' ? undefined : (event_type || eventType)
+    const normalizedRiskLevel = (risk_level || riskLevel) === 'all' ? undefined : (risk_level || riskLevel)
+    const normalizedApiEndpoint = (api_endpoint || apiEndpoint) === 'all' ? undefined : (api_endpoint || apiEndpoint)
+
+    // Handle timeRange parameter
+    let calculatedStartDate = start_date
+    let calculatedEndDate = end_date
+    
+    if (timeRange && timeRange !== 'all') {
+      const now = new Date()
+      const timeRangeMap = {
+        '1h': 1 * 60 * 60 * 1000,
+        '6h': 6 * 60 * 60 * 1000,
+        '12h': 12 * 60 * 60 * 1000,
+        '24h': 24 * 60 * 60 * 1000,
+        '7d': 7 * 24 * 60 * 60 * 1000,
+        '30d': 30 * 24 * 60 * 60 * 1000
+      }
+      
+      const milliseconds = timeRangeMap[timeRange as keyof typeof timeRangeMap]
+      if (milliseconds) {
+        const startTime = new Date(now.getTime() - milliseconds)
+        calculatedStartDate = startTime.toISOString().split('T')[0]
+        calculatedEndDate = now.toISOString().split('T')[0]
+      }
     }
 
-    // Build query
+    // Calculate offset for pagination
+    const offset = (page - 1) * limit
+
+    // Build base query with count
     let query = supabase
-      .from('hipaa_audit_logs')
-      .select('*')
-      .gte('created_at', startTime.toISOString())
-      .order('created_at', { ascending: false })
-      .limit(limit)
+      .from('audit_logs')
+      .select(`
+        id,
+        event_type,
+        user_id,
+        resource_type,
+        resource_id,
+        action,
+        ip_address,
+        user_agent,
+        success,
+        risk_level,
+        timestamp,
+        duration_ms,
+        cache_hit,
+        threat_level,
+        details
+      `, { count: 'exact' })
 
     // Apply filters
-    if (riskLevel !== 'all') {
-      query = query.eq('risk_level', riskLevel)
+    if (user_id) {
+      query = query.eq('user_id', user_id)
     }
 
-    if (eventType !== 'all') {
-      query = query.eq('event_type', eventType)
+    if (resource_type) {
+      query = query.eq('resource_type', resource_type)
     }
 
-    const { data: logs, error } = await query
+    if (normalizedEventType) {
+      query = query.eq('event_type', normalizedEventType)
+    }
+
+    if (action) {
+      query = query.eq('action', action)
+    }
+
+    if (success !== undefined) {
+      query = query.eq('success', success)
+    }
+
+    if (normalizedRiskLevel) {
+      query = query.eq('risk_level', normalizedRiskLevel)
+    }
+
+    if (ip_address) {
+      query = query.eq('ip_address', ip_address)
+    }
+
+    if (cache_hit !== undefined) {
+      query = query.eq('cache_hit', cache_hit)
+    }
+
+    // Date range filtering
+    if (calculatedStartDate) {
+      query = query.gte('timestamp', `${calculatedStartDate}T00:00:00.000Z`)
+    }
+
+    if (calculatedEndDate) {
+      query = query.lte('timestamp', `${calculatedEndDate}T23:59:59.999Z`)
+    }
+
+    // API endpoint filtering
+    if (normalizedApiEndpoint) {
+      query = query.like('details->>api_endpoint', `%${normalizedApiEndpoint}%`)
+    }
+
+    if (http_method) {
+      query = query.eq('details->>http_method', http_method)
+    }
+
+    // Performance filtering
+    if (min_duration !== undefined) {
+      query = query.gte('duration_ms', min_duration)
+    }
+
+    if (max_duration !== undefined) {
+      query = query.lte('duration_ms', max_duration)
+    }
+
+    // Search across multiple fields
+    if (search) {
+      query = query.or(`
+        user_id.ilike.%${search}%,
+        resource_type.ilike.%${search}%,
+        action.ilike.%${search}%,
+        ip_address.ilike.%${search}%,
+        details->>api_endpoint.ilike.%${search}%
+      `)
+    }
+
+    // Apply sorting
+    const ascending = sort_order === 'asc'
+    query = query.order(sort_by, { ascending })
+
+    // Apply pagination
+    query = query.range(offset, offset + limit - 1)
+
+    const { data: logs, error, count } = await query
 
     if (error) {
-      console.error('Error fetching audit logs:', error)
-      // Return sample logs if table doesn't exist yet
-      const sampleLogs = generateSampleAuditLogs()
-      return NextResponse.json({
-        logs: sampleLogs,
-        message: 'Audit logs table not found. Showing sample data for demonstration.'
-      })
+      throw new Error(`Failed to fetch audit logs: ${error.message}`)
     }
 
-    // If no logs exist, create some sample data for demo
-    if (!logs || logs.length === 0) {
-      const sampleLogs = generateSampleAuditLogs()
-      return NextResponse.json({
-        logs: sampleLogs,
-        message: 'No audit logs found. Showing sample data for demonstration.'
-      })
-    }
+    // Calculate pagination metadata
+    const totalPages = Math.ceil((count || 0) / limit)
+    const hasNext = page < totalPages
+    const hasPrev = page > 1
 
-    return NextResponse.json({
-      logs: logs || [],
-      total: logs?.length || 0,
-      timeRange,
-      filters: { riskLevel, eventType }
-    })
+    // Get summary statistics for the current filter
+    const statsQuery = supabase
+      .from('audit_logs')
+      .select('success, risk_level, duration_ms, cache_hit')
 
-  } catch (error) {
-    console.error('Audit logs API error:', error)
-    
-    // Return sample data if there's an error
-    const sampleLogs = generateSampleAuditLogs()
-    return NextResponse.json({
-      logs: sampleLogs,
-      message: 'Error accessing audit logs. Showing sample data for demonstration.',
-      error: 'Database connection issue'
-    })
-  }
-}
+    // Apply the same filters to stats query (excluding pagination)
+    let filteredStatsQuery = statsQuery
+    if (user_id) filteredStatsQuery = filteredStatsQuery.eq('user_id', user_id)
+    if (resource_type) filteredStatsQuery = filteredStatsQuery.eq('resource_type', resource_type)
+    if (normalizedEventType) filteredStatsQuery = filteredStatsQuery.eq('event_type', normalizedEventType)
+    if (calculatedStartDate) filteredStatsQuery = filteredStatsQuery.gte('timestamp', `${calculatedStartDate}T00:00:00.000Z`)
+    if (calculatedEndDate) filteredStatsQuery = filteredStatsQuery.lte('timestamp', `${calculatedEndDate}T23:59:59.999Z`)
 
-// Generate sample audit logs for demonstration
-function generateSampleAuditLogs() {
-  const now = new Date()
-  const sampleLogs = []
+    const { data: statsData } = await filteredStatsQuery
 
-  // Generate logs for the last 24 hours
-  for (let i = 0; i < 25; i++) {
-    const timestamp = new Date(now.getTime() - Math.random() * 24 * 60 * 60 * 1000)
-    
-    const eventTypes = ['data_access', 'data_modification', 'login_attempt', 'failed_access', 'export_data']
-    const riskLevels = ['low', 'medium', 'high', 'critical']
-    const userIds = ['user_001', 'user_002', 'user_003', 'admin_001', 'system']
-    const resourceTypes = ['biomarkers', 'lab_reports', 'user_data', 'health_metrics', 'sleep_data']
-    const actions = ['view', 'create', 'update', 'delete', 'export']
-    const ipAddresses = ['192.168.1.100', '10.0.0.50', '172.16.0.25', '203.0.113.45']
-
-    const eventType = eventTypes[Math.floor(Math.random() * eventTypes.length)]
-    const riskLevel = riskLevels[Math.floor(Math.random() * riskLevels.length)]
-    const userId = userIds[Math.floor(Math.random() * userIds.length)]
-    const resourceType = resourceTypes[Math.floor(Math.random() * resourceTypes.length)]
-    const action = actions[Math.floor(Math.random() * actions.length)]
-    const ipAddress = ipAddresses[Math.floor(Math.random() * ipAddresses.length)]
-
-    sampleLogs.push({
-      id: `audit_${i + 1}`,
-      created_at: timestamp.toISOString(),
-      event_type: eventType,
-      user_id: userId,
-      resource_type: resourceType,
-      resource_id: `${resourceType}_${Math.floor(Math.random() * 1000)}`,
-      action: action,
-      ip_address: ipAddress,
-      user_agent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-      success: Math.random() > 0.1, // 90% success rate
-      risk_level: riskLevel,
-      details: {
-        session_id: `session_${Math.random().toString(36).substr(2, 9)}`,
-        duration_ms: Math.floor(Math.random() * 5000),
-        data_size: Math.floor(Math.random() * 1000000),
-        encryption_used: true
+    // Calculate summary statistics
+    const stats = {
+      total_records: count || 0,
+      success_rate: statsData ? Math.round((statsData.filter(r => r.success).length / statsData.length) * 100) : 0,
+      avg_response_time: statsData && statsData.length > 0 
+        ? Math.round(statsData.reduce((sum, r) => sum + (r.duration_ms || 0), 0) / statsData.length)
+        : 0,
+      cache_hit_rate: statsData && statsData.length > 0
+        ? Math.round((statsData.filter(r => r.cache_hit).length / statsData.length) * 100)
+        : 0,
+      risk_distribution: {
+        low: statsData ? statsData.filter(r => r.risk_level === 'low').length : 0,
+        medium: statsData ? statsData.filter(r => r.risk_level === 'medium').length : 0,
+        high: statsData ? statsData.filter(r => r.risk_level === 'high').length : 0,
+        critical: statsData ? statsData.filter(r => r.risk_level === 'critical').length : 0
       }
-    })
-  }
+    }
 
-  return sampleLogs.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
-} 
+    return {
+      logs: logs || [],
+      pagination: {
+        page,
+        limit,
+        total: count || 0,
+        totalPages,
+        hasNext,
+        hasPrev
+      },
+      filters: {
+        user_id,
+        resource_type,
+        event_type: normalizedEventType,
+        action,
+        success,
+        risk_level: normalizedRiskLevel,
+        ip_address,
+        start_date: calculatedStartDate,
+        end_date: calculatedEndDate,
+        search,
+        api_endpoint: normalizedApiEndpoint,
+        http_method,
+        min_duration,
+        max_duration,
+        cache_hit,
+        sort_by,
+        sort_order,
+        timeRange
+      },
+      statistics: stats
+    }
+  },
+  {
+    resourceType: 'audit_logs',
+    querySchema: auditLogsQuerySchema,
+    cacheTTL: 30 * 1000, // Cache for 30 seconds (audit logs change frequently)
+    maxRequestSize: 2048,
+    timeout: 15000
+  }
+) 

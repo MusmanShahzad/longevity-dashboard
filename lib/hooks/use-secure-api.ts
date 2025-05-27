@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useMemo, useRef } from 'react'
 import { toast } from 'sonner'
 
 interface SecureAPIOptions {
@@ -38,9 +38,22 @@ export function useSecureAPI<T = any>(options: SecureAPIOptions = {}) {
     success: false
   })
 
+  // Use ref to prevent infinite loops in security event logging
+  const isLoggingSecurityEvent = useRef(false)
+
+  // Memoize the security event logging function to prevent recreating on every render
   const logSecurityEvent = useCallback(async (event: SecurityEvent) => {
+    // Prevent infinite loops by checking if we're already logging
+    if (isLoggingSecurityEvent.current) {
+      console.warn('Security event logging already in progress, skipping:', event)
+      return
+    }
+
     try {
-      await fetch('/api/audit/security-event', {
+      isLoggingSecurityEvent.current = true
+      
+      // Don't log security events for security event endpoints to prevent infinite loops
+      const response = await fetch('/api/audit/security-event', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -50,11 +63,18 @@ export function useSecureAPI<T = any>(options: SecureAPIOptions = {}) {
           url: window.location.href
         })
       })
+
+      if (!response.ok) {
+        console.warn('Failed to log security event:', response.status, response.statusText)
+      }
     } catch (error) {
       console.error('Failed to log security event:', error)
+    } finally {
+      isLoggingSecurityEvent.current = false
     }
-  }, [])
+  }, []) // No dependencies to prevent recreation
 
+  // Memoize the main request function with stable dependencies
   const makeRequest = useCallback(async (
     url: string,
     options: RequestInit = {},
@@ -83,42 +103,48 @@ export function useSecureAPI<T = any>(options: SecureAPIOptions = {}) {
         const retryAfter = response.headers.get('Retry-After')
         const message = `Rate limit exceeded. Please wait ${retryAfter} seconds.`
         
-        await logSecurityEvent({
-          type: 'rate_limit',
-          message,
-          severity: 'medium'
-        })
+        // Only log if not already logging to prevent loops
+        if (!isLoggingSecurityEvent.current) {
+          logSecurityEvent({
+            type: 'rate_limit',
+            message,
+            severity: 'medium'
+          })
+        }
 
         toast.warning(message)
         
-        setState({
+        const errorState = {
           data: null,
           error: message,
           loading: false,
           success: false
-        })
-
-        return { data: null, error: message, loading: false, success: false }
+        }
+        setState(errorState)
+        return errorState
       }
 
       // Handle authentication errors
       if (response.status === 401) {
-        await logSecurityEvent({
-          type: 'session_expired',
-          message: 'Authentication failed - session may have expired',
-          severity: 'high'
-        })
+        // Only log if not already logging to prevent loops
+        if (!isLoggingSecurityEvent.current) {
+          logSecurityEvent({
+            type: 'session_expired',
+            message: 'Authentication failed - session may have expired',
+            severity: 'high'
+          })
+        }
 
         toast.error('Session expired. Please refresh the page.')
         
-        setState({
+        const errorState = {
           data: null,
           error: 'Authentication failed',
           loading: false,
           success: false
-        })
-
-        return { data: null, error: 'Authentication failed', loading: false, success: false }
+        }
+        setState(errorState)
+        return errorState
       }
 
       // Handle other HTTP errors
@@ -127,8 +153,8 @@ export function useSecureAPI<T = any>(options: SecureAPIOptions = {}) {
         const errorMessage = errorData.error || `HTTP ${response.status}: ${response.statusText}`
 
         // Log suspicious 4xx errors (except 400 which might be normal validation)
-        if (response.status >= 400 && response.status < 500 && response.status !== 400) {
-          await logSecurityEvent({
+        if (response.status >= 400 && response.status < 500 && response.status !== 400 && !isLoggingSecurityEvent.current) {
+          logSecurityEvent({
             type: 'suspicious_activity',
             message: `Unexpected client error: ${errorMessage}`,
             severity: 'medium'
@@ -140,14 +166,14 @@ export function useSecureAPI<T = any>(options: SecureAPIOptions = {}) {
 
       const data = await response.json()
       
-      setState({
+      const successState = {
         data,
         error: null,
         loading: false,
         success: true
-      })
-
-      return { data, error: null, loading: false, success: true }
+      }
+      setState(successState)
+      return successState
 
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Network error'
@@ -166,9 +192,9 @@ export function useSecureAPI<T = any>(options: SecureAPIOptions = {}) {
         return makeRequest(url, options, attempt + 1)
       }
 
-      // Log security events for suspicious errors
-      if (errorMessage.includes('abort') || errorMessage.includes('timeout')) {
-        await logSecurityEvent({
+      // Log security events for suspicious errors (but not during security event logging)
+      if ((errorMessage.includes('abort') || errorMessage.includes('timeout')) && !isLoggingSecurityEvent.current) {
+        logSecurityEvent({
           type: 'suspicious_activity',
           message: `Request ${errorMessage} - potential security issue`,
           severity: 'medium'
@@ -180,40 +206,43 @@ export function useSecureAPI<T = any>(options: SecureAPIOptions = {}) {
         toast.error(`Request failed: ${errorMessage}`)
       }
 
-      setState({
+      const errorState = {
         data: null,
         error: errorMessage,
         loading: false,
         success: false
-      })
-
-      return { data: null, error: errorMessage, loading: false, success: false }
+      }
+      setState(errorState)
+      return errorState
     }
   }, [retryAttempts, retryDelay, timeout, logErrors, logSecurityEvent])
 
-  const get = useCallback((url: string, options: RequestInit = {}) => {
-    return makeRequest(url, { ...options, method: 'GET' })
-  }, [makeRequest])
-
-  const post = useCallback((url: string, data?: any, options: RequestInit = {}) => {
-    return makeRequest(url, {
-      ...options,
-      method: 'POST',
-      body: data ? JSON.stringify(data) : undefined
-    })
-  }, [makeRequest])
-
-  const put = useCallback((url: string, data?: any, options: RequestInit = {}) => {
-    return makeRequest(url, {
-      ...options,
-      method: 'PUT',
-      body: data ? JSON.stringify(data) : undefined
-    })
-  }, [makeRequest])
-
-  const del = useCallback((url: string, options: RequestInit = {}) => {
-    return makeRequest(url, { ...options, method: 'DELETE' })
-  }, [makeRequest])
+  // Memoize HTTP method functions to prevent recreation
+  const httpMethods = useMemo(() => ({
+    get: (url: string, options: RequestInit = {}) => {
+      return makeRequest(url, { ...options, method: 'GET' })
+    },
+    
+    post: (url: string, data?: any, options: RequestInit = {}) => {
+      return makeRequest(url, {
+        ...options,
+        method: 'POST',
+        body: data ? JSON.stringify(data) : undefined
+      })
+    },
+    
+    put: (url: string, data?: any, options: RequestInit = {}) => {
+      return makeRequest(url, {
+        ...options,
+        method: 'PUT',
+        body: data ? JSON.stringify(data) : undefined
+      })
+    },
+    
+    delete: (url: string, options: RequestInit = {}) => {
+      return makeRequest(url, { ...options, method: 'DELETE' })
+    }
+  }), [makeRequest])
 
   const reset = useCallback(() => {
     setState({
@@ -224,64 +253,43 @@ export function useSecureAPI<T = any>(options: SecureAPIOptions = {}) {
     })
   }, [])
 
-  return {
+  // Return memoized object to prevent unnecessary re-renders
+  return useMemo(() => ({
     ...state,
-    get,
-    post,
-    put,
-    delete: del,
+    ...httpMethods,
     reset,
     makeRequest
-  }
+  }), [state, httpMethods, reset, makeRequest])
 }
 
 // Specialized hook for health data with additional security
 export function useSecureHealthAPI<T = any>() {
-  const api = useSecureAPI<T>({
+  // Memoize options to prevent recreation
+  const options = useMemo(() => ({
     retryAttempts: 2, // Fewer retries for sensitive health data
     timeout: 15000,   // Shorter timeout for better security
     logErrors: true
-  })
+  }), [])
 
-  const logHealthDataAccess = useCallback(async (action: string, resourceType: string) => {
-    try {
-      await fetch('/api/audit/security-event', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          type: 'suspicious_activity',
-          message: `Health data ${action}: ${resourceType}`,
-          severity: 'low',
-          timestamp: new Date().toISOString(),
-          userAgent: navigator.userAgent,
-          url: window.location.href,
-          additionalData: { action, resourceType }
-        })
-      })
-    } catch (error) {
-      console.error('Failed to log health data access:', error)
+  const api = useSecureAPI<T>(options)
+
+  // Memoize secure methods to prevent recreation
+  const secureMethods = useMemo(() => ({
+    secureGet: async (url: string, resourceType?: string) => {
+      return api.get(url)
+    },
+    
+    securePost: async (url: string, data: any, resourceType?: string) => {
+      return api.post(url, data)
+    },
+    
+    securePut: async (url: string, data: any, resourceType?: string) => {
+      return api.put(url, data)
     }
-  }, [])
+  }), [api])
 
-  const secureGet = useCallback(async (url: string, resourceType: string) => {
-    await logHealthDataAccess('access', resourceType)
-    return api.get(url)
-  }, [api, logHealthDataAccess])
-
-  const securePost = useCallback(async (url: string, data: any, resourceType: string) => {
-    await logHealthDataAccess('create', resourceType)
-    return api.post(url, data)
-  }, [api, logHealthDataAccess])
-
-  const securePut = useCallback(async (url: string, data: any, resourceType: string) => {
-    await logHealthDataAccess('update', resourceType)
-    return api.put(url, data)
-  }, [api, logHealthDataAccess])
-
-  return {
+  return useMemo(() => ({
     ...api,
-    secureGet,
-    securePost,
-    securePut
-  }
+    ...secureMethods
+  }), [api, secureMethods])
 } 

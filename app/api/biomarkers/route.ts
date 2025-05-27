@@ -11,18 +11,6 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "User ID is required" }, { status: 400 })
     }
 
-    // Log HIPAA audit event for biomarker data access
-    await HIPAACompliance.HIPAAAuditLogger.logEvent({
-      event_type: 'data_access',
-      user_id: userId,
-      resource_type: 'biomarkers',
-      action: 'fetch_biomarkers',
-      ip_address: request.headers.get('x-forwarded-for') || 'unknown',
-      user_agent: request.headers.get('user-agent') || 'unknown',
-      success: true,
-      risk_level: 'low'
-    })
-
     // Fetch lab reports with biomarker data
     const { data: labReports, error } = await supabase
       .from("lab_reports")

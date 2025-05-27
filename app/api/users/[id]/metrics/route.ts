@@ -37,33 +37,8 @@ async function secureMetricsHandler(
       .single()
 
     if (userError) {
-      await HIPAAAuditLogger.logEvent({
-        event_type: 'failed_access',
-        user_id: id,
-        resource_type: 'users',
-        resource_id: id,
-        action: 'read',
-        ip_address: context.ipAddress,
-        user_agent: context.userAgent,
-        success: false,
-        risk_level: 'medium',
-        details: { error: userError.message }
-      })
       return NextResponse.json({ error: userError.message }, { status: 400 })
     }
-
-    // Log successful user data access
-    await HIPAAAuditLogger.logEvent({
-      event_type: 'data_access',
-      user_id: id,
-      resource_type: 'users',
-      resource_id: id,
-      action: 'read',
-      ip_address: context.ipAddress,
-      user_agent: context.userAgent,
-      success: true,
-      risk_level: 'low'
-    })
 
     // ===== DATE RANGE CALCULATION =====
     // Calculate date 6 days ago for filtering recent sleep data
@@ -82,35 +57,8 @@ async function secureMetricsHandler(
       .order("created_at", { ascending: false })
 
     if (sleepError) {
-      await HIPAAAuditLogger.logEvent({
-        event_type: 'failed_access',
-        user_id: id,
-        resource_type: 'sleep_data',
-        action: 'read',
-        ip_address: context.ipAddress,
-        user_agent: context.userAgent,
-        success: false,
-        risk_level: 'medium',
-        details: { error: sleepError.message }
-      })
       return NextResponse.json({ error: sleepError.message }, { status: 400 })
     }
-
-    // Log successful sleep data access
-    await HIPAAAuditLogger.logEvent({
-      event_type: 'data_access',
-      user_id: id,
-      resource_type: 'sleep_data',
-      action: 'read',
-      ip_address: context.ipAddress,
-      user_agent: context.userAgent,
-      success: true,
-      risk_level: 'low',
-      details: { 
-        recordCount: allSleepData?.length || 0,
-        dateRange: { from: sixDaysAgoString, to: new Date().toISOString().split('T')[0] }
-      }
-    })
 
     // ===== SLEEP DATA PROCESSING =====
     // Since we now prevent duplicates at the database level, we can work directly with the data
@@ -187,26 +135,6 @@ async function secureMetricsHandler(
         recommendationsCount: bioAgeResult?.recommendations?.length || 0
       })
     }
-
-    // Log metrics calculation completion
-    await HIPAAAuditLogger.logEvent({
-      event_type: 'data_access',
-      user_id: id,
-      resource_type: 'metrics',
-      action: 'calculate',
-      ip_address: context.ipAddress,
-      user_agent: context.userAgent,
-      success: true,
-      risk_level: 'low',
-      details: {
-        metricsCalculated: {
-          avgShieldScore: Math.round(avgShieldScore),
-          sleepDataCount: sleepData?.length || 0,
-          chronologicalAge,
-          biologicalAge: chronologicalAge + bioAgeDelta
-        }
-      }
-    })
 
     return NextResponse.json({
       metrics: {

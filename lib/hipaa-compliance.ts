@@ -1,5 +1,4 @@
 // HIPAA Compliance utilities for healthcare data protection
-import { createHash, randomBytes, createCipheriv, createDecipheriv } from 'crypto'
 import { NextRequest } from 'next/server'
 
 // Request context for audit logging
@@ -86,64 +85,47 @@ export const DATA_CLASSIFICATIONS: Record<string, DataClassification> = {
   }
 }
 
-// Encryption utilities for PHI
-const ENCRYPTION_ALGORITHM = 'aes-256-gcm'
-const KEY_LENGTH = 32
-const IV_LENGTH = 16
-const TAG_LENGTH = 16
+// Utility functions for generating IDs and hashing (Edge Runtime compatible)
+function generateId(): string {
+  // Use crypto.randomUUID() which is available in Edge Runtime
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+    return crypto.randomUUID()
+  }
+
+  // Fallback to timestamp-based ID
+  return `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+}
+
+async function hashData(data: string): Promise<string> {
+  // Use Web Crypto API which is available in Edge Runtime
+  if (typeof crypto !== 'undefined' && crypto.subtle) {
+    const encoder = new TextEncoder()
+    const dataBuffer = encoder.encode(data)
+    const hashBuffer = await crypto.subtle.digest('SHA-256', dataBuffer)
+    const hashArray = Array.from(new Uint8Array(hashBuffer))
+    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('')
+  }
+  
+  // Fallback for environments without Web Crypto API
+  return data
+}
 
 export class PHIEncryption {
-  private static getEncryptionKey(): Buffer {
-    const key = process.env.PHI_ENCRYPTION_KEY
-    if (!key) {
-      throw new Error('PHI_ENCRYPTION_KEY environment variable is required')
-    }
-    return Buffer.from(key, 'hex')
-  }
-
-  static encrypt(data: string): { encrypted: string; iv: string; tag: string } {
-    const key = this.getEncryptionKey()
-    const iv = randomBytes(IV_LENGTH)
-    const cipher = createCipheriv(ENCRYPTION_ALGORITHM, key, iv)
-    
-    let encrypted = cipher.update(data, 'utf8', 'hex')
-    encrypted += cipher.final('hex')
-    
-    const tag = cipher.getAuthTag()
-    
-    return {
-      encrypted,
-      iv: iv.toString('hex'),
-      tag: tag.toString('hex')
-    }
-  }
-
-  static decrypt(encryptedData: { encrypted: string; iv: string; tag: string }): string {
-    const key = this.getEncryptionKey()
-    const iv = Buffer.from(encryptedData.iv, 'hex')
-    const tag = Buffer.from(encryptedData.tag, 'hex')
-    
-    const decipher = createDecipheriv(ENCRYPTION_ALGORITHM, key, iv)
-    decipher.setAuthTag(tag)
-    
-    let decrypted = decipher.update(encryptedData.encrypted, 'hex', 'utf8')
-    decrypted += decipher.final('utf8')
-    
-    return decrypted
-  }
-
-  static hashPII(data: string): string {
+  static async hashPII(data: string): Promise<string> {
     // One-way hash for PII that needs to be searchable but not reversible
     const salt = process.env.PII_HASH_SALT || 'default-salt-change-in-production'
-    return createHash('sha256').update(data + salt).digest('hex')
+    return await hashData(data + salt)
   }
+  
+  // Note: Full encryption/decryption moved to server-side only functions
+  // Edge Runtime doesn't support Node.js crypto module
 }
 
 // HIPAA Audit Logger
 export class HIPAAAuditLogger {
   static async logEvent(event: Omit<AuditLogEntry, 'id' | 'timestamp'>): Promise<void> {
     const auditEntry: AuditLogEntry = {
-      id: randomBytes(16).toString('hex'),
+      id: generateId(),
       timestamp: new Date().toISOString(),
       ...event
     }
@@ -315,7 +297,7 @@ export class PrivacyControls {
 
   static async requestDataExport(userId: string): Promise<{ exportId: string; estimatedCompletion: Date }> {
     // GDPR/CCPA data export request
-    const exportId = randomBytes(16).toString('hex')
+    const exportId = generateId()
     const estimatedCompletion = new Date(Date.now() + 24 * 60 * 60 * 1000) // 24 hours
 
     // Note: This would need proper audit context in a real implementation
@@ -326,7 +308,7 @@ export class PrivacyControls {
 
   static async requestDataDeletion(userId: string): Promise<{ deletionId: string; scheduledDate: Date }> {
     // GDPR right to be forgotten
-    const deletionId = randomBytes(16).toString('hex')
+    const deletionId = generateId()
     const scheduledDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) // 30 days notice
 
     // Note: This would need proper audit context in a real implementation

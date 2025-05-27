@@ -51,7 +51,7 @@ export async function POST(request: NextRequest) {
 
     // Try to insert into audit logs table
     const { error } = await supabase
-      .from('hipaa_audit_logs')
+      .from('audit_logs')
       .insert([securityEvent])
 
     if (error) {

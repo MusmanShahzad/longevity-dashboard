@@ -100,13 +100,29 @@ const EmptyState = () => (
   />
 )
 
-const ErrorState = ({ error }: { error: Error }) => (
-  <StateMessage
-    icon={() => <div className="text-red-400 text-xl">⚠️</div>}
-    iconColor=""
-    title="Failed to Load Health Alerts"
-    description={error.message}
-  />
+const ErrorState = ({ error, onRetry }: { error: Error; onRetry?: () => void }) => (
+  <div className="text-center py-8">
+    <div className="text-red-400 text-4xl mb-3">⚠️</div>
+    <h4 className="text-lg font-semibold text-white mb-2">Failed to Load Health Alerts</h4>
+    <p className="text-gray-400 text-sm mb-4">{error.message}</p>
+    {onRetry && (
+      <Button
+        onClick={onRetry}
+        variant="outline"
+        className="mb-4 border-red-400 text-red-400 hover:bg-red-400/10"
+      >
+        Try Again
+      </Button>
+    )}
+    <div className="text-xs text-gray-500 bg-gray-800/50 rounded-lg p-3 max-w-md mx-auto">
+      <p className="mb-2">Troubleshooting tips:</p>
+      <ul className="text-left space-y-1">
+        <li>• Check your internet connection</li>
+        <li>• Refresh the page</li>
+        <li>• Try again in a few moments</li>
+      </ul>
+    </div>
+  </div>
 )
 
 const AlertItem = ({ 
@@ -249,43 +265,83 @@ export function HealthAlertsCard({ userId }: HealthAlertsCardProps) {
   const { 
     data: healthAlertsData, 
     isLoading: alertsLoading, 
-    error: alertsError 
+    error: alertsError,
+    refetch: refetchAlerts
   } = useHealthAlerts(userId)
   
   const { 
     data: sleepDataResponse, 
-    isLoading: sleepLoading 
+    isLoading: sleepLoading,
+    refetch: refetchSleepData
   } = useSleepData(userId)
 
-  const alerts = healthAlertsData?.alerts || []
-  const sleepData = sleepDataResponse?.sleepData || []
+  console.log('🏥 Health alerts data:', healthAlertsData)
+  console.log('😴 Sleep data response:', sleepDataResponse)
+
+  // Memoize the basic data to prevent unnecessary recalculations
+  const alerts = useMemo(() => healthAlertsData?.alerts || [], [healthAlertsData?.alerts])
+  const sleepData = useMemo(() => sleepDataResponse?.sleepData || [], [sleepDataResponse?.sleepData])
   const isLoading = alertsLoading || sleepLoading
+
+  console.log('📊 Processed alerts:', alerts.length)
+  console.log('📊 Processed sleep data:', sleepData.length)
 
   // Memoized processed data
   const { alertsWithSleepData, groupedAlerts, sortedDates } = useMemo(() => {
-    // Process alerts with sleep data - fix TypeScript error by ensuring proper typing
-    const processedAlerts: AlertWithSleepData[] = alerts.map((alert) => {
-      const alertDate = getAlertDate(alert)
-      const matchingSleepData = sleepData.find((sleep: any) => sleep.date === alertDate)
+    // Ensure we have valid arrays
+    const validAlerts = Array.isArray(alerts) ? alerts : []
+    const validSleepData = Array.isArray(sleepData) ? sleepData : []
 
-      return {
-        ...alert,
-        sleep_data: matchingSleepData,
+    console.log('🔄 Processing alerts:', validAlerts.length, 'sleep data:', validSleepData.length)
+
+    // Process alerts with sleep data - fix TypeScript error by ensuring proper typing
+    const processedAlerts: AlertWithSleepData[] = validAlerts.map((alert) => {
+      try {
+        const alertDate = getAlertDate(alert)
+        const matchingSleepData = validSleepData.find((sleep: any) => sleep?.date === alertDate)
+
+        return {
+          ...alert,
+          sleep_data: matchingSleepData,
+        }
+      } catch (error) {
+        console.error('Error processing alert:', alert, error)
+        return {
+          ...alert,
+          sleep_data: undefined,
+        }
       }
     })
 
     // Group alerts by date
     const grouped: GroupedAlerts = processedAlerts.reduce((acc: GroupedAlerts, alert: AlertWithSleepData) => {
-      const date = getAlertDate(alert)
-      if (!acc[date]) {
-        acc[date] = []
+      try {
+        const date = getAlertDate(alert)
+        if (!acc[date]) {
+          acc[date] = []
+        }
+        acc[date].push(alert)
+      } catch (error) {
+        console.error('Error grouping alert:', alert, error)
       }
-      acc[date].push(alert)
       return acc
     }, {})
 
     // Sort dates (most recent first)
-    const dates = Object.keys(grouped).sort((a, b) => new Date(b).getTime() - new Date(a).getTime())
+    const dates = Object.keys(grouped).sort((a, b) => {
+      try {
+        return new Date(b).getTime() - new Date(a).getTime()
+      } catch (error) {
+        console.error('Error sorting dates:', a, b, error)
+        return 0
+      }
+    })
+
+    console.log('✅ Processed data:', {
+      alerts: processedAlerts.length,
+      groups: Object.keys(grouped).length,
+      dates: dates.length
+    })
 
     return {
       alertsWithSleepData: processedAlerts,
@@ -296,7 +352,11 @@ export function HealthAlertsCard({ userId }: HealthAlertsCardProps) {
 
   // Auto-expand the most recent date on first load
   if (sortedDates.length > 0 && expandedDates.size === 0) {
-    setExpandedDates(new Set([sortedDates[0]]))
+    try {
+      setExpandedDates(new Set([sortedDates[0]]))
+    } catch (error) {
+      console.error('Error auto-expanding dates:', error)
+    }
   }
 
   const displayDates = showAllAlerts ? sortedDates : sortedDates.slice(0, INITIAL_DISPLAY_LIMIT)
@@ -325,6 +385,14 @@ export function HealthAlertsCard({ userId }: HealthAlertsCardProps) {
     setShowAllAlerts(prev => !prev)
   }, [])
 
+  const handleRetry = useCallback(async () => {
+    try {
+      await Promise.all([refetchAlerts(), refetchSleepData()])
+    } catch (error) {
+      console.error('Error retrying data fetch:', error)
+    }
+  }, [refetchAlerts, refetchSleepData])
+
   // Render content based on state
   if (isLoading) {
     return (
@@ -341,7 +409,7 @@ export function HealthAlertsCard({ userId }: HealthAlertsCardProps) {
     return (
       <GlassCard className="p-6">
         <CardHeader alertCount={0} />
-        <ErrorState error={alertsError} />
+        <ErrorState error={alertsError} onRetry={handleRetry} />
       </GlassCard>
     )
   }

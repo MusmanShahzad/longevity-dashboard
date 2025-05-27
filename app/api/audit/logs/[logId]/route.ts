@@ -1,218 +1,390 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { z } from 'zod'
 import { supabase } from '@/lib/supabase'
+import { withDataAccess } from '@/lib/optimized-api-wrapper'
 
-export async function GET(
-  request: NextRequest,
-  { params }: { params: { logId: string } }
-) {
-  try {
-    const { logId } = params
+// Validation schema for log ID parameter
+const logIdSchema = z.object({
+  logId: z.string().min(1, 'Log ID is required')
+})
 
-    if (!logId) {
-      return NextResponse.json(
-        { error: 'Log ID is required' },
-        { status: 400 }
-      )
-    }
+// Enhanced interfaces for type safety
+interface AuditLogDetails {
+  api_endpoint?: string
+  http_method?: string
+  response_status?: number
+  duration_ms?: number
+  query_parameters?: Record<string, any>
+  request_headers?: Record<string, string>
+  request_body?: any
+  request_body_size?: number
+  request_body_hash?: string
+  session_id?: string
+  request_id?: string
+  encryption_used?: boolean
+  error_details?: any
+  error_code?: string
+  cache_hit?: boolean
+  performance_metrics?: Record<string, any>
+  security_context?: Record<string, any>
+  [key: string]: any
+}
 
-    // Try to fetch from database first
+interface SecurityAnalysis {
+  threat_level: 'low' | 'medium' | 'high' | 'critical'
+  anomaly_score: number
+  flags: string[]
+  recommendations: string[]
+  risk_factors: {
+    failed_attempts: number
+    off_hours_access: boolean
+    bulk_operations: boolean
+    high_risk_event: boolean
+    suspicious_patterns: string[]
+  }
+}
+
+interface RelatedEvent {
+  id: string
+  event_type: string
+  action: string
+  timestamp: string
+  success: boolean
+  risk_level: string
+  resource_type: string
+}
+
+interface EnhancedAuditLog {
+  id: string
+  created_at: string
+  timestamp?: string
+  event_type: string
+  user_id: string
+  resource_type: string
+  resource_id?: string
+  action: string
+  ip_address: string
+  user_agent: string
+  success: boolean
+  risk_level: string
+  duration_ms?: number
+  cache_hit?: boolean
+  threat_level?: string
+  details?: AuditLogDetails
+  related_events: RelatedEvent[]
+  security_analysis: SecurityAnalysis
+  context: {
+    time_of_day: string
+    day_of_week: string
+    is_business_hours: boolean
+    session_duration?: number
+    geographic_location?: string
+  }
+}
+
+// GET /api/audit/logs/[logId] - Get specific audit log with comprehensive analysis
+export const GET = withDataAccess(
+  async (request, context) => {
+    const { logId } = context.params!
+
+    // Fetch the specific audit log
     const { data: log, error } = await supabase
-      .from('hipaa_audit_logs')
+      .from('audit_logs')
       .select('*')
       .eq('id', logId)
       .single()
 
-    if (error || !log) {
-      // If not found in database, generate detailed sample data
-      const detailedLog = generateDetailedSampleLog(logId)
-      return NextResponse.json({
-        log: detailedLog,
-        message: 'Audit log not found in database. Showing enhanced sample data for demonstration.'
-      })
+    if (error) {
+      if (error.code === 'PGRST116') {
+        throw new Error('Audit log not found')
+      }
+      throw new Error(`Failed to fetch audit log: ${error.message}`)
     }
 
-    // Enhance the log with additional details
-    const enhancedLog = enhanceLogWithDetails(log)
+    // Fetch related events (events from same user within 2 hours)
+    const logTime = new Date(log.timestamp || log.created_at)
+    const twoHoursBefore = new Date(logTime.getTime() - 2 * 60 * 60 * 1000)
+    const twoHoursAfter = new Date(logTime.getTime() + 2 * 60 * 60 * 1000)
 
-    return NextResponse.json({
-      log: enhancedLog
-    })
+    const { data: relatedEvents } = await supabase
+      .from('audit_logs')
+      .select('id, event_type, action, timestamp, success, risk_level, resource_type')
+      .eq('user_id', log.user_id)
+      .neq('id', logId)
+      .gte('timestamp', twoHoursBefore.toISOString())
+      .lte('timestamp', twoHoursAfter.toISOString())
+      .order('timestamp', { ascending: false })
+      .limit(20)
 
-  } catch (error) {
-    console.error('Audit log detail API error:', error)
-    
-    // Return enhanced sample data if there's an error
-    const detailedLog = generateDetailedSampleLog(params.logId)
-    return NextResponse.json({
-      log: detailedLog,
-      message: 'Error accessing audit log. Showing enhanced sample data for demonstration.',
-      error: 'Database connection issue'
-    })
+    // Fetch user session context (events from same IP within 24 hours)
+    const twentyFourHoursAgo = new Date(logTime.getTime() - 24 * 60 * 60 * 1000)
+    const { data: sessionEvents } = await supabase
+      .from('audit_logs')
+      .select('timestamp, event_type, success')
+      .eq('ip_address', log.ip_address)
+      .gte('timestamp', twentyFourHoursAgo.toISOString())
+      .lte('timestamp', logTime.toISOString())
+      .order('timestamp', { ascending: true })
+
+    // Generate comprehensive security analysis
+    const securityAnalysis = await generateAdvancedSecurityAnalysis(
+      log, 
+      relatedEvents || [], 
+      sessionEvents || []
+    )
+
+    // Generate contextual information
+    const logContext = generateLogContext(log, sessionEvents || [])
+
+    // Build enhanced audit log response
+    const enhancedLog: EnhancedAuditLog = {
+      id: log.id,
+      created_at: log.created_at,
+      timestamp: log.timestamp,
+      event_type: log.event_type,
+      user_id: log.user_id,
+      resource_type: log.resource_type,
+      resource_id: log.resource_id,
+      action: log.action,
+      ip_address: log.ip_address,
+      user_agent: log.user_agent,
+      success: log.success,
+      risk_level: log.risk_level,
+      duration_ms: log.duration_ms,
+      cache_hit: log.cache_hit,
+      threat_level: log.threat_level,
+      details: log.details,
+      related_events: (relatedEvents || []).map(event => ({
+        id: event.id,
+        event_type: event.event_type,
+        action: event.action,
+        timestamp: event.timestamp,
+        success: event.success,
+        risk_level: event.risk_level,
+        resource_type: event.resource_type
+      })),
+      security_analysis: securityAnalysis,
+      context: logContext
+    }
+
+    return {
+      log: enhancedLog,
+      metadata: {
+        related_events_count: relatedEvents?.length || 0,
+        session_events_count: sessionEvents?.length || 0,
+        analysis_timestamp: new Date().toISOString()
+      }
+    }
+  },
+  {
+    resourceType: 'audit_logs',
+    paramsSchema: logIdSchema,
+    cacheTTL: 30 * 1000, // Cache for 30 seconds
+    maxRequestSize: 1024,
+    timeout: 10000
   }
-}
+)
 
-// Generate detailed sample audit log for demonstration
-function generateDetailedSampleLog(logId: string) {
-  const now = new Date()
-  const timestamp = new Date(now.getTime() - Math.random() * 24 * 60 * 60 * 1000)
+// Advanced security analysis with machine learning-like patterns
+async function generateAdvancedSecurityAnalysis(
+  log: any, 
+  relatedEvents: any[], 
+  sessionEvents: any[]
+): Promise<SecurityAnalysis> {
+  const flags: string[] = []
+  const recommendations: string[] = []
+  let anomalyScore = 0
+  let threatLevel: 'low' | 'medium' | 'high' | 'critical' = 'low'
+
+  // Risk factors tracking
+  const riskFactors = {
+    failed_attempts: 0,
+    off_hours_access: false,
+    bulk_operations: false,
+    high_risk_event: false,
+    suspicious_patterns: [] as string[]
+  }
+
+  // 1. ANALYZE CURRENT LOG
   
-  const eventTypes = ['data_access', 'data_modification', 'login_attempt', 'failed_access', 'export_data']
-  const riskLevels = ['low', 'medium', 'high', 'critical']
-  const userIds = ['user_001', 'user_002', 'user_003', 'admin_001', 'system']
-  const resourceTypes = ['biomarkers', 'lab_reports', 'user_data', 'health_metrics', 'sleep_data']
-  const actions = ['view', 'create', 'update', 'delete', 'export']
-  const ipAddresses = ['192.168.1.100', '10.0.0.50', '172.16.0.25', '203.0.113.45']
-  const locations = ['New York, NY', 'Los Angeles, CA', 'Chicago, IL', 'Houston, TX']
-  const browsers = ['Chrome 120.0', 'Firefox 121.0', 'Safari 17.2', 'Edge 120.0']
-  const operatingSystems = ['Windows 11', 'macOS 14.2', 'Ubuntu 22.04', 'iOS 17.2']
-  const deviceTypes = ['desktop', 'mobile', 'tablet']
-
-  const eventType = eventTypes[Math.floor(Math.random() * eventTypes.length)]
-  const riskLevel = riskLevels[Math.floor(Math.random() * riskLevels.length)]
-  const userId = userIds[Math.floor(Math.random() * userIds.length)]
-  const resourceType = resourceTypes[Math.floor(Math.random() * resourceTypes.length)]
-  const action = actions[Math.floor(Math.random() * actions.length)]
-  const ipAddress = ipAddresses[Math.floor(Math.random() * ipAddresses.length)]
-  const success = Math.random() > 0.2 // 80% success rate
-
-  // Generate related events
-  const relatedEvents = []
-  const numRelatedEvents = Math.floor(Math.random() * 5) + 1
-  for (let i = 0; i < numRelatedEvents; i++) {
-    const relatedTimestamp = new Date(timestamp.getTime() + (i * 1000 * 60 * Math.random()))
-    relatedEvents.push({
-      id: `related_${i + 1}`,
-      event_type: eventTypes[Math.floor(Math.random() * eventTypes.length)],
-      action: actions[Math.floor(Math.random() * actions.length)],
-      timestamp: relatedTimestamp.toISOString(),
-      success: Math.random() > 0.1
-    })
+  // Failed operation analysis
+  if (!log.success) {
+    flags.push('Failed operation detected')
+    anomalyScore += 25
+    riskFactors.failed_attempts = 1
+    recommendations.push('Investigate cause of operation failure')
   }
 
-  // Generate security analysis
-  const threatLevels = ['none', 'low', 'medium', 'high', 'critical']
-  const securityFlags = [
-    'Multiple failed attempts',
-    'Unusual access pattern',
-    'Off-hours access',
-    'New device detected',
-    'Geolocation anomaly',
-    'High-privilege operation',
-    'Bulk data access',
-    'Suspicious user agent'
-  ]
-
-  const threatLevel = threatLevels[Math.floor(Math.random() * threatLevels.length)]
-  const anomalyScore = Math.floor(Math.random() * 100)
-  const numFlags = Math.floor(Math.random() * 3)
-  const flags = []
-  for (let i = 0; i < numFlags; i++) {
-    const flag = securityFlags[Math.floor(Math.random() * securityFlags.length)]
-    if (!flags.includes(flag)) {
-      flags.push(flag)
-    }
+  // High-risk event types
+  const highRiskEvents = ['data_deletion', 'export_data', 'failed_access', 'security_event']
+  if (highRiskEvents.includes(log.event_type)) {
+    flags.push(`High-risk event type: ${log.event_type}`)
+    anomalyScore += 30
+    riskFactors.high_risk_event = true
+    recommendations.push('Review authorization for high-risk operations')
   }
 
-  const recommendations = [
-    'Monitor user activity for next 24 hours',
-    'Verify user identity through secondary authentication',
-    'Review access permissions for this resource',
-    'Check for additional suspicious activity',
-    'Consider implementing additional security measures',
-    'Update security policies if necessary'
-  ]
+  // Critical risk level from original assessment
+  if (log.risk_level === 'critical') {
+    flags.push('Critical risk level assigned')
+    anomalyScore += 50
+    threatLevel = 'critical'
+    recommendations.push('Immediate security review required')
+  } else if (log.risk_level === 'high') {
+    flags.push('High risk level assigned')
+    anomalyScore += 30
+  }
+
+  // Performance anomalies
+  if (log.duration_ms && log.duration_ms > 10000) {
+    flags.push('Unusually slow response time')
+    anomalyScore += 15
+    riskFactors.suspicious_patterns.push('performance_anomaly')
+    recommendations.push('Investigate system performance issues')
+  }
+
+  // 2. ANALYZE RELATED EVENTS PATTERNS
+
+  // Multiple failed attempts
+  const failedRelatedEvents = relatedEvents.filter(event => !event.success)
+  if (failedRelatedEvents.length >= 3) {
+    flags.push(`${failedRelatedEvents.length} failed attempts in time window`)
+    anomalyScore += 40
+    riskFactors.failed_attempts = failedRelatedEvents.length
+    riskFactors.suspicious_patterns.push('multiple_failures')
+    recommendations.push('Consider implementing account lockout policies')
+  }
+
+  // Bulk operations detection
+  const sameTypeEvents = relatedEvents.filter(event => 
+    event.event_type === log.event_type && 
+    event.resource_type === log.resource_type
+  )
+  if (sameTypeEvents.length >= 10) {
+    flags.push('Bulk operations detected')
+    anomalyScore += 35
+    riskFactors.bulk_operations = true
+    riskFactors.suspicious_patterns.push('bulk_operations')
+    recommendations.push('Review data access patterns for potential data exfiltration')
+  }
+
+  // Privilege escalation patterns
+  const adminEvents = relatedEvents.filter(event => 
+    event.resource_type === 'users' || 
+    event.action.includes('admin') ||
+    event.event_type === 'system_access'
+  )
+  if (adminEvents.length >= 2) {
+    flags.push('Administrative activity detected')
+    anomalyScore += 25
+    riskFactors.suspicious_patterns.push('privilege_escalation')
+    recommendations.push('Verify administrative privileges and access rights')
+  }
+
+  // 3. ANALYZE SESSION CONTEXT
+
+  // Off-hours access (outside 6 AM - 10 PM)
+  const logHour = new Date(log.timestamp || log.created_at).getHours()
+  if (logHour < 6 || logHour > 22) {
+    flags.push('Off-hours access detected')
+    anomalyScore += 20
+    riskFactors.off_hours_access = true
+    recommendations.push('Verify legitimate business need for off-hours access')
+  }
+
+  // Session anomalies
+  const sessionFailureRate = sessionEvents.length > 0 
+    ? sessionEvents.filter(e => !e.success).length / sessionEvents.length 
+    : 0
+  
+  if (sessionFailureRate > 0.3) {
+    flags.push('High session failure rate')
+    anomalyScore += 30
+    riskFactors.suspicious_patterns.push('session_anomalies')
+    recommendations.push('Investigate user session for potential compromise')
+  }
+
+  // Rapid-fire requests
+  if (sessionEvents.length > 100) {
+    flags.push('High-volume session activity')
+    anomalyScore += 20
+    riskFactors.suspicious_patterns.push('high_volume_activity')
+    recommendations.push('Monitor for automated/scripted access')
+  }
+
+  // 4. GEOGRAPHIC AND DEVICE ANALYSIS
+  
+  // Check for suspicious user agent patterns
+  const userAgent = log.user_agent || ''
+  const suspiciousAgents = ['curl', 'wget', 'python', 'bot', 'crawler', 'scanner']
+  if (suspiciousAgents.some(agent => userAgent.toLowerCase().includes(agent))) {
+    flags.push('Suspicious user agent detected')
+    anomalyScore += 25
+    riskFactors.suspicious_patterns.push('suspicious_user_agent')
+    recommendations.push('Verify legitimate application access')
+  }
+
+  // 5. DETERMINE FINAL THREAT LEVEL
+  
+  if (anomalyScore >= 80) {
+    threatLevel = 'critical'
+  } else if (anomalyScore >= 60) {
+    threatLevel = 'high'
+  } else if (anomalyScore >= 35) {
+    threatLevel = 'medium'
+  } else {
+    threatLevel = 'low'
+  }
+
+  // Add general recommendations based on threat level
+  if (threatLevel === 'critical') {
+    recommendations.unshift('URGENT: Immediate security incident response required')
+    recommendations.push('Consider temporary account suspension')
+    recommendations.push('Escalate to security team immediately')
+  } else if (threatLevel === 'high') {
+    recommendations.unshift('Enhanced monitoring recommended')
+    recommendations.push('Review user access permissions')
+  } else if (threatLevel === 'medium') {
+    recommendations.push('Continue monitoring user activity')
+  }
 
   return {
-    id: logId,
-    created_at: timestamp.toISOString(),
-    event_type: eventType,
-    user_id: userId,
-    resource_type: resourceType,
-    resource_id: `${resourceType}_${Math.floor(Math.random() * 1000)}`,
-    action: action,
-    ip_address: ipAddress,
-    user_agent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    success: success,
-    risk_level: riskLevel,
-    details: {
-      session_id: `session_${Math.random().toString(36).substr(2, 9)}`,
-      duration_ms: Math.floor(Math.random() * 5000) + 100,
-      data_size: Math.floor(Math.random() * 1000000) + 1024,
-      encryption_used: Math.random() > 0.1, // 90% encrypted
-      request_id: `req_${Math.random().toString(36).substr(2, 12)}`,
-      endpoint: `/api/${resourceType}/${action}`,
-      method: action === 'view' ? 'GET' : action === 'delete' ? 'DELETE' : action === 'create' ? 'POST' : 'PUT',
-      response_code: success ? (action === 'create' ? 201 : 200) : (Math.random() > 0.5 ? 403 : 500),
-      error_message: !success ? 'Access denied: Insufficient permissions' : undefined,
-      user_role: userId.includes('admin') ? 'administrator' : userId.includes('system') ? 'system' : 'user',
-      location: locations[Math.floor(Math.random() * locations.length)],
-      device_type: deviceTypes[Math.floor(Math.random() * deviceTypes.length)],
-      browser: browsers[Math.floor(Math.random() * browsers.length)],
-      os: operatingSystems[Math.floor(Math.random() * operatingSystems.length)]
-    },
-    related_events: relatedEvents,
-    security_analysis: {
-      threat_level: threatLevel,
-      anomaly_score: anomalyScore,
-      flags: flags,
-      recommendations: recommendations.slice(0, Math.floor(Math.random() * 4) + 1)
-    }
+    threat_level: threatLevel,
+    anomaly_score: Math.min(anomalyScore, 100),
+    flags,
+    recommendations: [...new Set(recommendations)], // Remove duplicates
+    risk_factors: riskFactors
   }
 }
 
-// Enhance existing log with additional details
-function enhanceLogWithDetails(log: any) {
-  // Add enhanced details if they don't exist
-  if (!log.details) {
-    log.details = {}
+// Generate contextual information about the log
+function generateLogContext(log: any, sessionEvents: any[]) {
+  const logTime = new Date(log.timestamp || log.created_at)
+  
+  // Time analysis
+  const hour = logTime.getHours()
+  const dayOfWeek = logTime.toLocaleDateString('en-US', { weekday: 'long' })
+  const isBusinessHours = hour >= 9 && hour <= 17 && 
+    !['Saturday', 'Sunday'].includes(dayOfWeek)
+  
+  let timeOfDay: string
+  if (hour >= 6 && hour < 12) timeOfDay = 'morning'
+  else if (hour >= 12 && hour < 17) timeOfDay = 'afternoon'
+  else if (hour >= 17 && hour < 22) timeOfDay = 'evening'
+  else timeOfDay = 'night'
+
+  // Session duration calculation
+  let sessionDuration: number | undefined
+  if (sessionEvents.length > 1) {
+    const firstEvent = new Date(sessionEvents[0].timestamp)
+    const lastEvent = new Date(sessionEvents[sessionEvents.length - 1].timestamp)
+    sessionDuration = Math.round((lastEvent.getTime() - firstEvent.getTime()) / 1000 / 60) // minutes
   }
 
-  // Add missing technical details
-  if (!log.details.browser) {
-    const browsers = ['Chrome 120.0', 'Firefox 121.0', 'Safari 17.2', 'Edge 120.0']
-    log.details.browser = browsers[Math.floor(Math.random() * browsers.length)]
+  return {
+    time_of_day: timeOfDay,
+    day_of_week: dayOfWeek,
+    is_business_hours: isBusinessHours,
+    session_duration: sessionDuration,
+    geographic_location: 'Unknown' // Could be enhanced with IP geolocation
   }
-
-  if (!log.details.os) {
-    const operatingSystems = ['Windows 11', 'macOS 14.2', 'Ubuntu 22.04', 'iOS 17.2']
-    log.details.os = operatingSystems[Math.floor(Math.random() * operatingSystems.length)]
-  }
-
-  if (!log.details.device_type) {
-    const deviceTypes = ['desktop', 'mobile', 'tablet']
-    log.details.device_type = deviceTypes[Math.floor(Math.random() * deviceTypes.length)]
-  }
-
-  if (!log.details.location) {
-    const locations = ['New York, NY', 'Los Angeles, CA', 'Chicago, IL', 'Houston, TX']
-    log.details.location = locations[Math.floor(Math.random() * locations.length)]
-  }
-
-  // Add security analysis if it doesn't exist
-  if (!log.security_analysis) {
-    const threatLevels = ['none', 'low', 'medium', 'high', 'critical']
-    const securityFlags = [
-      'Multiple failed attempts',
-      'Unusual access pattern',
-      'Off-hours access',
-      'New device detected'
-    ]
-
-    log.security_analysis = {
-      threat_level: threatLevels[Math.floor(Math.random() * threatLevels.length)],
-      anomaly_score: Math.floor(Math.random() * 100),
-      flags: securityFlags.slice(0, Math.floor(Math.random() * 3)),
-      recommendations: [
-        'Monitor user activity for next 24 hours',
-        'Verify user identity through secondary authentication'
-      ]
-    }
-  }
-
-  // Add related events if they don't exist
-  if (!log.related_events) {
-    log.related_events = []
-  }
-
-  return log
 }

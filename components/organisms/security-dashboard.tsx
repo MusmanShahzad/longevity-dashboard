@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import { Shield, AlertTriangle, Eye, Activity, Clock, Users, Database, Lock } from 'lucide-react'
 import { GlassCard } from '@/components/atoms/glass-card'
 import { Button } from '@/components/ui/button'
@@ -37,14 +37,15 @@ export function SecurityDashboard({ className }: SecurityDashboardProps) {
   const [metrics, setMetrics] = useState<SecurityMetrics | null>(null)
   const [timeRange, setTimeRange] = useState<'24h' | '7d' | '30d'>('24h')
   const [filterRiskLevel, setFilterRiskLevel] = useState<string>('all')
+  const [loading, setLoading] = useState(false)
   
   const api = useSecureAPI()
 
-  useEffect(() => {
-    loadSecurityData()
-  }, [timeRange, filterRiskLevel])
-
-  const loadSecurityData = async () => {
+  // Memoize the loadSecurityData function to prevent unnecessary re-creation
+  const loadSecurityData = useCallback(async () => {
+    if (loading) return // Prevent multiple simultaneous calls
+    
+    setLoading(true)
     try {
       // Load audit logs
       const logsResponse = await api.get(
@@ -65,8 +66,39 @@ export function SecurityDashboard({ className }: SecurityDashboardProps) {
       }
     } catch (error) {
       console.error('Failed to load security data:', error)
+    } finally {
+      setLoading(false)
     }
-  }
+  }, [timeRange, filterRiskLevel, api.get, loading]) // Use api.get instead of api
+
+  // Use effect with stable dependencies
+  useEffect(() => {
+    loadSecurityData()
+  }, [loadSecurityData])
+
+  // Memoize exportAuditLogs function
+  const exportAuditLogs = useCallback(async () => {
+    try {
+      const response = await api.get(
+        `/api/audit/export?timeRange=${timeRange}&format=csv`
+      )
+      
+      if (response.success && response.data) {
+        // Create and download CSV file
+        const blob = new Blob([response.data.csv], { type: 'text/csv' })
+        const url = window.URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = `audit-logs-${timeRange}-${new Date().toISOString().split('T')[0]}.csv`
+        document.body.appendChild(a)
+        a.click()
+        document.body.removeChild(a)
+        window.URL.revokeObjectURL(url)
+      }
+    } catch (error) {
+      console.error('Failed to export audit logs:', error)
+    }
+  }, [timeRange, api.get]) // Stable dependencies
 
   const getRiskLevelColor = (level: string) => {
     switch (level) {
@@ -90,29 +122,6 @@ export function SecurityDashboard({ className }: SecurityDashboardProps) {
 
   const formatTimestamp = (timestamp: string) => {
     return new Date(timestamp).toLocaleString()
-  }
-
-  const exportAuditLogs = async () => {
-    try {
-      const response = await api.get(
-        `/api/audit/export?timeRange=${timeRange}&format=csv`
-      )
-      
-      if (response.success && response.data) {
-        // Create and download CSV file
-        const blob = new Blob([response.data.csv], { type: 'text/csv' })
-        const url = window.URL.createObjectURL(blob)
-        const a = document.createElement('a')
-        a.href = url
-        a.download = `audit-logs-${timeRange}-${new Date().toISOString().split('T')[0]}.csv`
-        document.body.appendChild(a)
-        a.click()
-        document.body.removeChild(a)
-        window.URL.revokeObjectURL(url)
-      }
-    } catch (error) {
-      console.error('Failed to export audit logs:', error)
-    }
   }
 
   return (

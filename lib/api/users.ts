@@ -12,7 +12,8 @@ export const fetchUsers = async (): Promise<User[]> => {
     throw new Error(`Failed to fetch users: ${response.statusText}`)
   }
   const data = await response.json()
-  return data.users
+  // Handle both old and new API response formats
+  return data.data?.users || data.users || []
 }
 
 export const fetchUser = async (userId: string): Promise<User> => {
@@ -21,7 +22,8 @@ export const fetchUser = async (userId: string): Promise<User> => {
     throw new Error(`Failed to fetch user: ${response.statusText}`)
   }
   const data = await response.json()
-  return data.user
+  // Handle both old and new API response formats
+  return data.data?.user || data.user
 }
 
 export const createUser = async (userData: UserInput): Promise<User> => {
@@ -39,7 +41,8 @@ export const createUser = async (userData: UserInput): Promise<User> => {
   }
   
   const data = await response.json()
-  return data.user
+  // Handle both old and new API response formats
+  return data.data?.user || data.user
 }
 
 export const updateUser = async (userId: string, userData: Partial<UserInput>): Promise<{user: User}> => {
@@ -57,7 +60,8 @@ export const updateUser = async (userId: string, userData: Partial<UserInput>): 
   }
   
   const data = await response.json()
-  return data.user
+  // Handle both old and new API response formats
+  return data.data?.user || data.user
 }
 
 export const deleteUser = async (userId: string): Promise<void> => {

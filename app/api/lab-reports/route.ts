@@ -145,24 +145,6 @@ async function processBiomarkerExtraction(labReportId: string, fileUrl: string) 
         .from("lab_reports")
         .update({ status: "error" })
         .eq("id", labReportId)
-    } else {
-      // Log successful biomarker extraction
-      await HIPAACompliance.HIPAAAuditLogger.logEvent({
-        event_type: 'biomarker_extraction',
-        user_id: 'system', // System-initiated process
-        resource_type: 'lab_reports',
-        resource_id: labReportId,
-        action: 'biomarker_extraction_completed',
-        ip_address: '127.0.0.1',
-        user_agent: 'system_process',
-        success: true,
-        risk_level: 'low',
-        details: {
-          biomarkers_extracted: biomarkerData.biomarkers.length,
-          confidence: biomarkerData.confidence,
-          insights_generated: insights.length
-        }
-      })
     }
     
   } catch (error) {
