@@ -444,16 +444,34 @@ export async function optimizedMiddleware(request: NextRequest): Promise<NextRes
       // Use setTimeout to make logging non-blocking
       setTimeout(async () => {
         try {
+          // Capture request body for POST/PUT/PATCH requests
+          let requestBody = undefined
+          if (['POST', 'PUT', 'PATCH'].includes(method)) {
+            try {
+              // Clone the request to read the body without consuming it
+              const clonedRequest = request.clone()
+              const bodyText = await clonedRequest.text()
+              if (bodyText) {
+                requestBody = JSON.parse(bodyText)
+              }
+            } catch (error) {
+              console.warn('Failed to capture request body:', error)
+              requestBody = { error: 'Failed to parse request body' }
+            }
+          }
+
           await optimizedAuditLogger.logAPIRequest(
             request,
             response,
             startTime,
-            undefined, // Don't log request body in middleware to reduce overhead
+            requestBody, // Include request body for write operations
             {
               request_id: requestId,
               response_time: responseTime,
               rate_limit_tier: rateLimitResult.config?.tier,
-              performance_score: responseTime < 1000 ? 100 : Math.max(0, 100 - (responseTime / 100))
+              performance_score: responseTime < 1000 ? 100 : Math.max(0, 100 - (responseTime / 100)),
+              middleware_logged: true,
+              comprehensive_logging: ['POST', 'PUT', 'PATCH'].includes(method)
             }
           )
         } catch (error) {
@@ -495,34 +513,19 @@ export async function optimizedMiddleware(request: NextRequest): Promise<NextRes
 
 // Determine if a request should be logged to reduce noise
 function shouldLogRequest(pathname: string, method: string): boolean {
-  // Always log write operations
-  if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
-    return true
+  // Never log security event endpoints to prevent infinite loops
+  if (pathname.includes('/api/audit/security-event')) {
+    return false
   }
 
-  // Always log authentication and security endpoints
-  if (pathname.includes('/auth') || pathname.includes('/login') || pathname.includes('/logout')) {
-    return true
+  // For HIPAA compliance, we need to log ALL API requests
+  // Only skip non-API requests to reduce noise
+  if (pathname.startsWith('/api/')) {
+    return true // Log ALL API requests for HIPAA compliance
   }
 
-  // Reduce logging for frequent read operations
-  if (method === 'GET') {
-    // Always log audit log access (but the audit system will handle deduplication)
-    if (pathname.includes('/api/audit/')) {
-      return true
-    }
-
-    // Sample other read operations (log 30% of them)
-    const readOnlyEndpoints = ['/api/users', '/api/sleep-data', '/api/health-alerts', '/api/metrics']
-    const isReadOnly = readOnlyEndpoints.some(endpoint => pathname.includes(endpoint))
-    
-    if (isReadOnly) {
-      return Math.random() < 0.3 // Log 30% of read operations
-    }
-  }
-
-  // Log everything else by default
-  return true
+  // Don't log static files, health checks, etc.
+  return false
 }
 
 // Export configuration

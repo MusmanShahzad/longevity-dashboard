@@ -198,28 +198,6 @@ const UserCard = ({ user, onSelect }: { user: UserType, onSelect: () => void }) 
   )
 }
 
-const Header = ({ onCreateUser }: { onCreateUser: () => void }) => (
-  <GlassCard className="p-6">
-    <div className="flex items-center justify-between">
-      <div className="flex items-center space-x-4">
-        <div className="p-3 rounded-lg bg-gradient-to-br from-cyan-500 to-blue-500">
-          <Users className="h-8 w-8 text-white" />
-        </div>
-        <div>
-          <h1 className="text-3xl font-bold text-white">User Management</h1>
-          <p className="text-cyan-300">Manage all user profiles and health data</p>
-        </div>
-      </div>
-      <Button
-        onClick={onCreateUser}
-        className="bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-600 hover:to-emerald-600"
-      >
-        <Plus className="h-4 w-4 mr-2" />
-        Add New User
-      </Button>
-    </div>
-  </GlassCard>
-)
 
 export function UserManagement({ onUserSelect, onCreateUser }: UserManagementProps) {
   const [searchTerm, setSearchTerm] = useState("")
@@ -246,10 +224,8 @@ export function UserManagement({ onUserSelect, onCreateUser }: UserManagementPro
   }
 
   return (
-    <div className="min-h-screen p-4 md:p-6 lg:p-8">
+    <div className="min-h-screen">
       <div className="max-w-7xl mx-auto space-y-6">
-        {/* Header */}
-        <Header onCreateUser={onCreateUser} />
 
         {/* Search and Stats */}
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">

@@ -297,6 +297,23 @@ export class OptimizedAuditLogger {
 
   // Determine if we should skip logging this event to reduce noise
   private shouldSkipLogging(event: Partial<OptimizedAuditEvent>): boolean {
+    // NEVER skip POST, PUT, PATCH, DELETE operations - these are critical for HIPAA compliance
+    const writeOperations = ['POST', 'PUT', 'PATCH', 'DELETE']
+    const isWriteOperation = writeOperations.includes(event.details?.http_method || '')
+    if (isWriteOperation) {
+      return false // ALWAYS log write operations (100% logging)
+    }
+
+    // NEVER skip failed operations - these are critical for security
+    if (event.success === false) {
+      return false // ALWAYS log failures (100% logging)
+    }
+
+    // NEVER skip high/critical risk events
+    if (event.risk_level === 'high' || event.risk_level === 'critical') {
+      return false // ALWAYS log high-risk events (100% logging)
+    }
+
     // Skip frequent read operations on audit logs themselves to prevent recursive logging
     if (event.resource_type === 'audit_logs' && event.action === 'read') {
       // Only log every 10th audit log read to reduce noise
@@ -309,45 +326,39 @@ export class OptimizedAuditLogger {
       return true
     }
 
-    // Aggressive filtering for rate limit events
+    // Reduce logging for security events to prevent spam (but not critical ones)
     if (event.event_type === 'security_event') {
       const action = event.action || ''
       
       // Skip rate limit events if they're too frequent (let the batch processor handle rate limiting)
-      if (action.includes('rate_limit')) {
+      if (action.includes('rate_limit') && event.risk_level !== 'critical' && event.risk_level !== 'high') {
         // Only log 1 in 10 rate limit events to reduce noise
         return Math.random() > 0.1
       }
       
-      // Skip other repetitive security events
-      if (action.includes('security_threat_detected') || action.includes('suspicious_activity')) {
+      // Skip other repetitive security events (but not critical ones)
+      if ((action.includes('security_threat_detected') || action.includes('suspicious_activity')) && 
+          event.risk_level !== 'critical' && event.risk_level !== 'high') {
         // Only log 1 in 5 threat detection events
         return Math.random() > 0.2
       }
     }
 
-    // Skip successful GET requests to common read-only endpoints (sample 20%)
-    if (event.details?.http_method === 'GET' && event.success !== false) {
-      const readOnlyEndpoints = ['/api/users', '/api/sleep-data', '/api/health-alerts', '/api/metrics']
-      const isReadOnly = readOnlyEndpoints.some(ro => endpoint.includes(ro))
-      if (isReadOnly) {
-        return Math.random() > 0.2 // Only log 20% of successful read operations
+    // For GET requests, log all API requests for HIPAA compliance
+    if (event.details?.http_method === 'GET') {
+      // Always log audit, user, and health data access for HIPAA compliance
+      const criticalEndpoints = ['/api/audit/', '/api/users/', '/api/lab-reports/', '/api/biomarkers/', '/api/health-alerts/']
+      const isCriticalEndpoint = criticalEndpoints.some(ce => endpoint.includes(ce))
+      if (isCriticalEndpoint) {
+        return false // ALWAYS log critical endpoint access
       }
+
+      // Sample other GET requests (log 50% for better coverage)
+      return Math.random() > 0.5
     }
 
-    // Always log write operations, failures, and critical security events
-    const writeOperations = ['POST', 'PUT', 'PATCH', 'DELETE']
-    const isWriteOperation = writeOperations.includes(event.details?.http_method || '')
-    const isFailure = event.success === false
-    const isCriticalSecurityEvent = event.event_type === 'security_event' && 
-      (event.risk_level === 'critical' || event.action?.includes('breach') || event.action?.includes('attack'))
-    const isHighRisk = event.risk_level === 'high' || event.risk_level === 'critical'
-
-    if (isWriteOperation || isFailure || isCriticalSecurityEvent || isHighRisk) {
-      return false // Don't skip these important events
-    }
-
-    return false // Log everything else by default
+    // Log everything else by default for HIPAA compliance
+    return false
   }
 
   // Calculate risk level based on event characteristics
@@ -415,7 +426,7 @@ export class OptimizedAuditLogger {
         request_headers: this.sanitizeHeaders(request.headers),
         request_body: sanitizedBody,
         request_body_size: bodySize,
-        request_body_hash: bodySize > 0 ? this.hashData(JSON.stringify(requestBody)) : null,
+        request_body_hash: bodySize > 0 ? this.hashData(JSON.stringify(requestBody)) : undefined,
         url: request.nextUrl.href,
         session_id: request.headers.get('x-session-id') || undefined,
         request_id: request.headers.get('x-request-id') || this.generateId(),

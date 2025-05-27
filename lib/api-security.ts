@@ -161,7 +161,10 @@ export function withAPISecurity(
           method: request.method,
           endpoint: new URL(request.url).pathname,
           responseCode: response.status,
-          responseTime: Date.now() - startTime
+          responseTime: Date.now() - startTime,
+          requestBody: body ? JSON.stringify(body).substring(0, 500) + '...' : null, // Log first 500 chars of request body
+          hasRequestBody: !!body,
+          bodySize: body ? JSON.stringify(body).length : 0
         })
       }
 
@@ -181,7 +184,10 @@ export function withAPISecurity(
           method: request.method,
           endpoint: new URL(request.url).pathname,
           error: error instanceof Error ? error.message : 'Unknown error',
-          responseTime: Date.now() - startTime
+          responseTime: Date.now() - startTime,
+          requestBody: body ? JSON.stringify(body).substring(0, 500) + '...' : null, // Log first 500 chars of request body
+          hasRequestBody: !!body,
+          bodySize: body ? JSON.stringify(body).length : 0
         })
       }
 

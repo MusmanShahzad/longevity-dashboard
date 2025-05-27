@@ -83,6 +83,9 @@ export function useSecureAPI<T = any>(options: SecureAPIOptions = {}) {
     setState(prev => ({ ...prev, loading: true, error: null }))
 
     try {
+      // Skip security event logging for security event endpoints to prevent infinite loops
+      const isSecurityEventEndpoint = url.includes('/api/audit/security-event')
+      
       // Add timeout to request
       const controller = new AbortController()
       const timeoutId = setTimeout(() => controller.abort(), timeout)
@@ -103,8 +106,8 @@ export function useSecureAPI<T = any>(options: SecureAPIOptions = {}) {
         const retryAfter = response.headers.get('Retry-After')
         const message = `Rate limit exceeded. Please wait ${retryAfter} seconds.`
         
-        // Only log if not already logging to prevent loops
-        if (!isLoggingSecurityEvent.current) {
+        // Only log if not already logging and not a security event endpoint
+        if (!isLoggingSecurityEvent.current && !isSecurityEventEndpoint) {
           logSecurityEvent({
             type: 'rate_limit',
             message,
@@ -126,8 +129,8 @@ export function useSecureAPI<T = any>(options: SecureAPIOptions = {}) {
 
       // Handle authentication errors
       if (response.status === 401) {
-        // Only log if not already logging to prevent loops
-        if (!isLoggingSecurityEvent.current) {
+        // Only log if not already logging and not a security event endpoint
+        if (!isLoggingSecurityEvent.current && !isSecurityEventEndpoint) {
           logSecurityEvent({
             type: 'session_expired',
             message: 'Authentication failed - session may have expired',
@@ -153,7 +156,8 @@ export function useSecureAPI<T = any>(options: SecureAPIOptions = {}) {
         const errorMessage = errorData.error || `HTTP ${response.status}: ${response.statusText}`
 
         // Log suspicious 4xx errors (except 400 which might be normal validation)
-        if (response.status >= 400 && response.status < 500 && response.status !== 400 && !isLoggingSecurityEvent.current) {
+        if (response.status >= 400 && response.status < 500 && response.status !== 400 && 
+            !isLoggingSecurityEvent.current && !isSecurityEventEndpoint) {
           logSecurityEvent({
             type: 'suspicious_activity',
             message: `Unexpected client error: ${errorMessage}`,
@@ -178,6 +182,9 @@ export function useSecureAPI<T = any>(options: SecureAPIOptions = {}) {
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Network error'
       
+      // Skip security event logging for security event endpoints
+      const isSecurityEventEndpoint = url.includes('/api/audit/security-event')
+      
       // Retry logic for network errors
       if (attempt < retryAttempts && (
         errorMessage.includes('fetch') || 
@@ -193,7 +200,8 @@ export function useSecureAPI<T = any>(options: SecureAPIOptions = {}) {
       }
 
       // Log security events for suspicious errors (but not during security event logging)
-      if ((errorMessage.includes('abort') || errorMessage.includes('timeout')) && !isLoggingSecurityEvent.current) {
+      if ((errorMessage.includes('abort') || errorMessage.includes('timeout')) && 
+          !isLoggingSecurityEvent.current && !isSecurityEventEndpoint) {
         logSecurityEvent({
           type: 'suspicious_activity',
           message: `Request ${errorMessage} - potential security issue`,

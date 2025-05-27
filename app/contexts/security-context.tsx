@@ -163,6 +163,12 @@ export function SecurityProvider({
       try {
         const response = await originalFetch(...args)
         
+        // Skip logging for security event endpoints to prevent infinite loops
+        const url = typeof args[0] === 'string' ? args[0] : args[0]?.url || ''
+        if (url.includes('/api/audit/security-event')) {
+          return response
+        }
+        
         // Check for rate limiting
         if (response.status === 429) {
           const retryAfter = response.headers.get('Retry-After')
@@ -179,6 +185,12 @@ export function SecurityProvider({
         
         return response
       } catch (error) {
+        // Skip logging for security event endpoints to prevent infinite loops
+        const url = typeof args[0] === 'string' ? args[0] : args[0]?.url || ''
+        if (url.includes('/api/audit/security-event')) {
+          throw error
+        }
+        
         logSecurityEvent({
           type: 'suspicious_activity',
           message: 'Network request failed - potential security issue',
@@ -209,17 +221,28 @@ export function SecurityProvider({
     // Log to console for development (in production, send to SIEM)
     console.warn('SECURITY EVENT:', newEvent)
     
-    // Send to backend audit system
+    // Send to backend audit system using original fetch to avoid interceptor
     if (typeof window !== 'undefined') {
-      fetch('/api/audit/security-event', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ...newEvent,
-          userAgent: navigator.userAgent,
-          url: window.location.href
+      // Use a timeout to prevent blocking and use original fetch
+      setTimeout(() => {
+        const originalFetch = window.fetch
+        // Temporarily restore original fetch to avoid interceptor
+        const nativeFetch = originalFetch.toString().includes('[native code]') 
+          ? originalFetch 
+          : fetch // Fallback to native fetch
+          
+        nativeFetch('/api/audit/security-event', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            ...newEvent,
+            userAgent: navigator.userAgent,
+            url: window.location.href
+          })
+        }).catch(error => {
+          console.error('Failed to log security event:', error)
         })
-      }).catch(console.error)
+      }, 0)
     }
   }, [])
 
