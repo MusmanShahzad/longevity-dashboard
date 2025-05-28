@@ -13,33 +13,6 @@ interface UserManagementProps {
   onCreateUser: () => void
 }
 
-// Reusable Components
-const LoadingState = () => (
-  <div className="min-h-screen p-4 md:p-6 lg:p-8">
-    <div className="max-w-7xl mx-auto space-y-6">
-      <GlassCard className="p-6">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-4">
-            <div className="p-3 rounded-lg bg-gradient-to-br from-cyan-500 to-blue-500">
-              <Users className="h-8 w-8 text-white" />
-            </div>
-            <div>
-              <h1 className="text-3xl font-bold text-white">User Management</h1>
-              <p className="text-cyan-300">Loading users...</p>
-            </div>
-          </div>
-        </div>
-      </GlassCard>
-      <GlassCard className="p-12">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-cyan-400 mx-auto mb-4"></div>
-          <p className="text-gray-400">Loading users...</p>
-        </div>
-      </GlassCard>
-    </div>
-  </div>
-)
-
 const ErrorState = ({ error, onCreateUser }: { error: string, onCreateUser: () => void }) => (
   <div className="min-h-screen p-4 md:p-6 lg:p-8">
     <div className="max-w-7xl mx-auto space-y-6">
@@ -212,11 +185,6 @@ export function UserManagement({ onUserSelect, onCreateUser }: UserManagementPro
       user.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       user.location?.toLowerCase().includes(searchTerm.toLowerCase()),
   )
-
-  // Show loading state
-  if (isLoading) {
-    return <LoadingState />
-  }
 
   // Show error state
   if (error) {
