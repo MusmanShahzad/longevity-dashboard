@@ -5,6 +5,7 @@ interface CalculatedFieldProps {
   value: number
   description?: string
   isGood?: boolean
+  compact?: boolean
 }
 
 export function CalculatedField({ label, value, description, isGood }: CalculatedFieldProps) {

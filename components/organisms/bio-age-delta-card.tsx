@@ -167,16 +167,32 @@ export function BioAgeDeltaCard({ userId }: BioAgeDeltaCardProps) {
                 
                 <div className="grid grid-cols-1 gap-2 text-xs">
                   <div className="flex justify-between">
-                    <span className="text-gray-400">Sleep Efficiency (40% weight):</span>
+                    <span className="text-gray-400">HRV Score (25% weight):</span>
+                    <span className="text-white">{bioAgeBreakdown.breakdown.hrvScore}/100</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-400">Total Sleep Time (20% weight):</span>
+                    <span className="text-white">{bioAgeBreakdown.breakdown.tstScore}/100</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-400">Sleep Efficiency (15% weight):</span>
                     <span className="text-white">{bioAgeBreakdown.breakdown.efficiencyScore}/100</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-gray-400">REM Sleep (30% weight):</span>
+                    <span className="text-gray-400">REM Sleep (10% weight):</span>
                     <span className="text-white">{bioAgeBreakdown.breakdown.remScore}/100</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-gray-400">Sleep Duration (30% weight):</span>
-                    <span className="text-white">{bioAgeBreakdown.breakdown.durationScore}/100</span>
+                    <span className="text-gray-400">Sleep Latency (10% weight):</span>
+                    <span className="text-white">{bioAgeBreakdown.breakdown.latencyScore}/100</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-400">Timing Consistency (10% weight):</span>
+                    <span className="text-white">{bioAgeBreakdown.breakdown.timingConsistencyScore}/100</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-400">Chronotype Alignment (10% weight):</span>
+                    <span className="text-white">{bioAgeBreakdown.breakdown.chronotypeAlignmentScore}/100</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-gray-400">Age Adjustment Factor:</span>

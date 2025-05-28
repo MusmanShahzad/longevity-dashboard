@@ -9,7 +9,20 @@ async function secureSleepDataHandler(
 ): Promise<NextResponse> {
   try {
     const body = await request.json()
-    const { user_id, date, total_sleep_hours, time_in_bed, rem_percentage } = body
+    console.log('📥 Received sleep data request body:', body)
+    
+    const { 
+      user_id, 
+      date, 
+      total_sleep_hours, 
+      time_in_bed, 
+      rem_percentage,
+      // New optional fields
+      sleep_latency_minutes,
+      hrv_overnight,
+      chronotype,
+      timing_consistency_hours
+    } = body
 
     // Set user context for audit logging
     context.userId = user_id
@@ -110,6 +123,16 @@ async function secureSleepDataHandler(
           light_sleep_percentage,
           awake_percentage,
           shield_score, // Add SHIELD score to the data
+          // Include new optional fields if provided
+          ...(sleep_latency_minutes !== undefined && { 
+            sleep_latency_minutes,
+            sleep_latency: sleep_latency_minutes // Also set the int4 field
+          }),
+          ...(hrv_overnight !== undefined && { hrv_overnight }),
+          ...(chronotype && { chronotype }),
+          ...(timing_consistency_hours !== undefined && { timing_consistency_hours }),
+          // Calculate chronotype alignment if chronotype is provided
+          ...(chronotype && { chronotype_alignment: calculateChronotypeAlignment(chronotype, date) })
         },
         {
           onConflict: "user_id,date",
@@ -427,5 +450,32 @@ async function generateHealthAlerts(userId: string, sleepData: any, sleepDate: s
   } catch (error) {
     console.error("Failed to generate health alerts:", error)
     return []
+  }
+}
+
+// ===== CHRONOTYPE ALIGNMENT CALCULATION =====
+// Calculate chronotype alignment score (0-100)
+function calculateChronotypeAlignment(chronotype: string, date: string): number {
+  // For now, return a simplified calculation
+  // In a real implementation, this would consider actual bedtime/wake time
+  // compared to optimal times for each chronotype
+  
+  // Simplified logic: return alignment score based on chronotype and day
+  // This could be enhanced to use actual sleep/wake times when available
+  const dayOfWeek = new Date(date).getDay()
+  const isWeekend = dayOfWeek === 0 || dayOfWeek === 6
+  
+  switch (chronotype) {
+    case 'morning':
+      // Morning types typically have better alignment on weekdays
+      return isWeekend ? 70 : 90
+    case 'evening':
+      // Evening types typically have better alignment on weekends
+      return isWeekend ? 90 : 70
+    case 'intermediate':
+      // Intermediate types are generally flexible
+      return 85
+    default:
+      return 80
   }
 }

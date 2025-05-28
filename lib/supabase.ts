@@ -28,6 +28,13 @@ export interface SleepData {
   deep_sleep_percentage?: number
   light_sleep_percentage?: number
   awake_percentage?: number
+  // Enhanced metrics
+  sleep_latency_minutes?: number
+  hrv_overnight?: number
+  chronotype?: 'morning' | 'evening' | 'intermediate'
+  timing_consistency_hours?: number
+  chronotype_alignment?: number
+  shield_score?: number
   created_at: string
 }
 

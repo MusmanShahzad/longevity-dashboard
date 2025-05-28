@@ -229,7 +229,12 @@ export const commonSchemas = {
     date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be in YYYY-MM-DD format'),
     total_sleep_hours: z.number().min(0).max(24),
     time_in_bed: z.number().min(0).max(24),
-    rem_percentage: z.number().min(0).max(100).optional()
+    rem_percentage: z.number().min(0).max(100).optional(),
+    // Enhanced metrics (optional)
+    sleep_latency_minutes: z.number().min(0).max(300).optional(),
+    hrv_overnight: z.number().min(1).max(200).optional(),
+    chronotype: z.enum(['morning', 'evening', 'intermediate']).optional(),
+    timing_consistency_hours: z.number().min(0).max(12).optional()
   }),
 
   labReport: z.object({

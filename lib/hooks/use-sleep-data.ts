@@ -9,7 +9,20 @@ export interface SleepData {
   rem_percentage: number
   shield_score: number
   created_at: string
-  updated_at: string
+  updated_at?: string
+  // Sleep stage percentages
+  awake_percentage: number
+  deep_sleep_percentage: number
+  light_sleep_percentage: number
+  // Sleep efficiency
+  sleep_efficiency: number
+  // Enhanced metrics (optional)
+  sleep_latency?: number | null
+  sleep_latency_minutes?: number | null
+  hrv_overnight?: number | null
+  timing_consistency_hours?: number | null
+  chronotype?: string | null
+  chronotype_alignment?: number | null
 }
 
 export interface SleepDataResponse {
@@ -22,6 +35,11 @@ export interface CreateSleepDataRequest {
   total_sleep_hours: number
   time_in_bed: number
   rem_percentage: number
+  // New optional fields
+  sleep_latency_minutes?: number
+  hrv_overnight?: number
+  chronotype?: string
+  timing_consistency_hours?: number
 }
 
 export interface CreateSleepDataResponse {

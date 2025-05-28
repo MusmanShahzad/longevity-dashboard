@@ -7,7 +7,7 @@ import { Formik, Form, type FormikProps } from "formik"
 import * as Yup from "yup"
 import { 
   X, Activity, Moon, Calendar, Lightbulb, AlertTriangle, 
-  CheckCircle, AlertCircle, History, ArrowLeft 
+  CheckCircle, AlertCircle, History, ArrowLeft, ChevronDown 
 } from "lucide-react"
 import { Modal } from "@/components/molecules/modal"
 import { FormGroup } from "@/components/molecules/form-group"
@@ -19,6 +19,7 @@ import { Button } from "@/components/ui/button"
 import { GlassCard } from "@/components/atoms/glass-card"
 import { useHealthAlerts } from "@/lib/hooks/use-health-alerts"
 import { useSleepDataWithMutation } from "@/lib/hooks/use-sleep-data"
+import { SelectInput } from "@/components/atoms/select-input"
 
 // Types
 interface HealthDataModalProps {
@@ -33,6 +34,11 @@ interface FormValues {
   timeInBed: number
   remPercentage: number
   date: string
+  // New optional fields for enhanced metrics
+  sleepLatency?: number
+  hrvOvernight?: number
+  chronotype?: 'morning' | 'evening' | 'intermediate' | null
+  timingConsistency?: number
 }
 
 interface Suggestion {
@@ -78,7 +84,23 @@ const validationSchema = Yup.object({
       const today = new Date()
       today.setHours(23, 59, 59, 999)
       return selectedDate <= today
-    })
+    }),
+  // New optional field validations
+  sleepLatency: Yup.number()
+    .min(0, "Sleep latency cannot be negative")
+    .max(300, "Sleep latency seems unusually high (>5 hours)")
+    .optional(),
+  hrvOvernight: Yup.number()
+    .min(1, "HRV must be greater than 0")
+    .max(200, "HRV seems unusually high")
+    .optional(),
+  chronotype: Yup.string()
+    .oneOf(['morning', 'evening', 'intermediate', ''], "Invalid chronotype")
+    .optional(),
+  timingConsistency: Yup.number()
+    .min(0, "Timing consistency cannot be negative")
+    .max(12, "Timing consistency seems unusually high")
+    .optional()
 })
 
 // Suggestion configuration
@@ -298,7 +320,27 @@ const SleepForm = ({
   modalState: ModalState
   sleepEfficiency: number
   onDateChange: (date: string) => void
-}) => (
+}) => {
+  // Calculate overall form completion
+  const coreFieldsCompleted = [
+    formik.values.totalSleepHours > 0,
+    formik.values.timeInBed > 0,
+    formik.values.remPercentage > 0,
+    formik.values.date
+  ].filter(Boolean).length
+
+  const enhancedFieldsCompleted = [
+    formik.values.sleepLatency !== undefined && formik.values.sleepLatency > 0,
+    formik.values.hrvOvernight !== undefined && formik.values.hrvOvernight > 0,
+    formik.values.chronotype !== null && formik.values.chronotype !== undefined,
+    formik.values.timingConsistency !== undefined && formik.values.timingConsistency >= 0
+  ].filter(Boolean).length
+
+  const totalFieldsCompleted = coreFieldsCompleted + enhancedFieldsCompleted
+  const totalFields = 8 // 4 core + 4 enhanced
+  const completionPercentage = (totalFieldsCompleted / totalFields) * 100
+
+  return (
   <Form className="space-y-6">
     {/* Date Selection */}
     <FormGroup label="Date" description="Select the date for this sleep data" required>
@@ -320,9 +362,28 @@ const SleepForm = ({
 
     {/* Sleep Data Section */}
     <div className="space-y-4">
-      <div className="flex items-center space-x-2 mb-4">
-        <Moon className="h-5 w-5 text-purple-400" />
-        <h3 className="text-lg font-semibold text-white">Sleep Metrics</h3>
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center space-x-2">
+          <Moon className="h-5 w-5 text-purple-400" />
+          <h3 className="text-lg font-semibold text-white">Sleep Metrics</h3>
+        </div>
+        <div className="text-xs font-medium px-3 py-1 rounded-full bg-gray-700/50 text-gray-300">
+          {totalFieldsCompleted}/{totalFields} fields completed
+        </div>
+      </div>
+
+      {/* Overall Progress Bar */}
+      <div className="mb-4">
+        <div className="flex items-center justify-between text-xs text-gray-400 mb-2">
+          <span>Form Completion</span>
+          <span>{completionPercentage.toFixed(0)}%</span>
+        </div>
+        <div className="w-full bg-gray-700 rounded-full h-2">
+          <div 
+            className="bg-gradient-to-r from-cyan-500 to-blue-500 h-2 rounded-full transition-all duration-300"
+            style={{ width: `${completionPercentage}%` }}
+          ></div>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -388,10 +449,176 @@ const SleepForm = ({
         value={sleepEfficiency}
         description="Calculated as (Total Sleep Hours ÷ Time in Bed) × 100%"
         isGood={sleepEfficiency >= 85}
+        compact={true}
       />
+
+      {/* Section Divider with Scroll Hint */}
+      <div className="relative my-6">
+        <div className="border-t border-gray-600/30"></div>
+        <div className="absolute inset-0 flex items-center justify-center">
+          <div className="bg-gray-800 px-4 py-2 rounded-full border border-green-500/30 flex items-center space-x-2 animate-pulse">
+            <span className="text-sm text-green-400 font-medium">More metrics below</span>
+            <ChevronDown className="h-4 w-4 text-green-400" />
+          </div>
+        </div>
+      </div>
+
+      {/* Enhanced Metrics Section */}
+      <div 
+        data-enhanced-metrics
+        className="space-y-4 mt-6 p-4 rounded-lg bg-gradient-to-r from-green-500/10 to-blue-500/10 border border-green-500/20"
+      >
+                  <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center space-x-2">
+            <Activity className="h-5 w-5 text-green-400" />
+            <h3 className="text-lg font-semibold text-white">Enhanced Sleep Analytics</h3>
+            <span className="text-xs text-green-400 bg-green-500/20 px-2 py-1 rounded font-medium">
+              🚀 Advanced
+            </span>
+          </div>
+          <div className="flex items-center space-x-2">
+            <div className="text-xs text-gray-300 bg-blue-500/20 px-3 py-1 rounded-full">
+              Boost your bio-age accuracy
+            </div>
+            <div className="text-xs font-medium px-2 py-1 rounded-full bg-gray-700/50 text-gray-300">
+              {enhancedFieldsCompleted}/4 completed
+            </div>
+          </div>
+        </div>
+        
+        <div className="text-sm text-gray-300 mb-4 p-3 rounded bg-blue-500/10 border border-blue-500/20">
+          <span className="text-blue-300 font-medium">💡 Pro Tip:</span> Adding these metrics can improve your biological age calculation by up to 25% accuracy!
+        </div>
+        
+        {/* Progress Bar */}
+        <div className="mb-4">
+          <div className="flex items-center justify-between text-xs text-gray-400 mb-2">
+            <span>Enhanced Metrics Progress</span>
+            <span>{enhancedFieldsCompleted}/4</span>
+          </div>
+          <div className="w-full bg-gray-700 rounded-full h-2">
+            <div 
+              className="bg-gradient-to-r from-green-500 to-blue-500 h-2 rounded-full transition-all duration-300"
+              style={{ width: `${(enhancedFieldsCompleted / 4) * 100}%` }}
+            ></div>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <FormGroup
+            label="Sleep Latency"
+            description="Time taken to fall asleep (minutes)"
+            tooltip="How long it takes you to fall asleep after getting into bed. Optimal is under 20 minutes."
+          >
+            <div className="relative">
+              <NumberInput
+                value={formik.values.sleepLatency ?? 0}
+                onChange={(value) => {
+                  console.log('🔢 Sleep Latency changed:', value)
+                  formik.setFieldValue('sleepLatency', value >= 0 ? value : undefined)
+                }}
+                placeholder="15"
+                min={0}
+                max={300}
+                step={1}
+                suffix="minutes"
+              />
+              {formik.values.sleepLatency !== undefined && formik.values.sleepLatency >= 0 && (
+                <CheckCircle className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-green-400" />
+              )}
+            </div>
+            {formik.touched.sleepLatency && formik.errors.sleepLatency && (
+              <p className="mt-1 text-sm text-red-400">{formik.errors.sleepLatency}</p>
+            )}
+          </FormGroup>
+
+          <FormGroup
+            label="HRV Overnight"
+            description="Heart Rate Variability during sleep (ms)"
+            tooltip="Higher HRV generally indicates better recovery and autonomic nervous system health. Optimal is above 50ms."
+          >
+            <div className="relative">
+              <NumberInput
+                value={formik.values.hrvOvernight ?? 0}
+                onChange={(value) => {
+                  console.log('💓 HRV changed:', value)
+                  formik.setFieldValue('hrvOvernight', value > 0 ? value : undefined)
+                }}
+                placeholder="45"
+                min={1}
+                max={200}
+                step={1}
+                suffix="ms"
+              />
+              {formik.values.hrvOvernight !== undefined && formik.values.hrvOvernight > 0 && (
+                <CheckCircle className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-green-400" />
+              )}
+            </div>
+            {formik.touched.hrvOvernight && formik.errors.hrvOvernight && (
+              <p className="mt-1 text-sm text-red-400">{formik.errors.hrvOvernight}</p>
+            )}
+          </FormGroup>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <FormGroup
+            label="Chronotype"
+            description="Your natural sleep-wake preference"
+            tooltip="Morning types prefer early bedtimes and wake times, evening types prefer later schedules."
+          >
+            <div className="relative">
+              <SelectInput
+                key={`chronotype-${formik.values.chronotype}-${formik.values.date}`}
+                value={formik.values.chronotype ?? ''}
+                onChange={(value) => {
+                  console.log('🌅 Chronotype changed:', value)
+                  formik.setFieldValue('chronotype', value || null)
+                }}
+                placeholder="Select chronotype"
+                options={[
+                  { value: 'morning', label: 'Morning Person (Early Bird)' },
+                  { value: 'intermediate', label: 'Intermediate (Flexible)' },
+                  { value: 'evening', label: 'Evening Person (Night Owl)' }
+                ]}
+              />
+              {formik.values.chronotype && (
+                <CheckCircle className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-green-400" />
+              )}
+            </div>
+            {formik.touched.chronotype && formik.errors.chronotype && (
+              <p className="mt-1 text-sm text-red-400">{formik.errors.chronotype}</p>
+            )}
+          </FormGroup>
+
+          <FormGroup
+            label="Timing Consistency"
+            description="Sleep schedule variation (hours)"
+            tooltip="How much your bedtime varies from day to day. Lower is better for sleep quality."
+          >
+            <div className="relative">
+              <NumberInput
+                value={formik.values.timingConsistency ?? 0}
+                onChange={(value) => formik.setFieldValue('timingConsistency', value >= 0 ? value : undefined)}
+                placeholder="0.5"
+                min={0}
+                max={12}
+                step={0.1}
+                suffix="hours"
+              />
+              {formik.values.timingConsistency !== undefined && formik.values.timingConsistency >= 0 && (
+                <CheckCircle className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-green-400" />
+              )}
+            </div>
+            {formik.touched.timingConsistency && formik.errors.timingConsistency && (
+              <p className="mt-1 text-sm text-red-400">{formik.errors.timingConsistency}</p>
+            )}
+          </FormGroup>
+        </div>
+      </div>
     </div>
   </Form>
-)
+  )
+}
 
 export function HealthDataModal({ isOpen, onClose, currentUser, onDataUpdate }: HealthDataModalProps) {
   // React Query hooks
@@ -415,16 +642,23 @@ export function HealthDataModal({ isOpen, onClose, currentUser, onDataUpdate }: 
   })
 
   const [sleepEfficiency, setSleepEfficiency] = useState<number>(0)
+  const [showEnhancedHint, setShowEnhancedHint] = useState<boolean>(true)
 
-  // Refs for debouncing
+  // Refs for debouncing and scroll handling
   const dateCheckTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  const scrollContainerRef = useRef<HTMLDivElement>(null)
 
   // Initial form values
   const initialValues: FormValues = {
     totalSleepHours: 0,
     timeInBed: 0,
     remPercentage: 0,
-    date: new Date().toISOString().split("T")[0]
+    date: new Date().toISOString().split("T")[0],
+    // New optional fields
+    sleepLatency: undefined,
+    hrvOvernight: undefined,
+    chronotype: null,
+    timingConsistency: undefined
   }
 
   // Update suggestions count when health alerts data changes
@@ -472,17 +706,29 @@ export function HealthDataModal({ isOpen, onClose, currentUser, onDataUpdate }: 
 
     try {
       const existingRecord = findDataForDate(date)
+      console.log("existingRecord", existingRecord)
 
       if (existingRecord) {
         setModalState(prev => ({ ...prev, isUpdating: true }))
         setFieldValue('totalSleepHours', existingRecord.total_sleep_hours || 0)
         setFieldValue('timeInBed', existingRecord.time_in_bed || 0)
         setFieldValue('remPercentage', existingRecord.rem_percentage || 0)
+        // Set new optional fields if they exist
+        setFieldValue('sleepLatency', existingRecord.sleep_latency_minutes || undefined)
+        setFieldValue('hrvOvernight', existingRecord.hrv_overnight || undefined)
+        console.log('🔄 Setting chronotype from existing record:', existingRecord.chronotype)
+        setFieldValue('chronotype', existingRecord.chronotype || null)
+        setFieldValue('timingConsistency', existingRecord.timing_consistency_hours || undefined)
       } else {
         setModalState(prev => ({ ...prev, isUpdating: false }))
         setFieldValue('totalSleepHours', 0)
         setFieldValue('timeInBed', 0)
         setFieldValue('remPercentage', 0)
+        // Reset new optional fields
+        setFieldValue('sleepLatency', undefined)
+        setFieldValue('hrvOvernight', undefined)
+        setFieldValue('chronotype', null)
+        setFieldValue('timingConsistency', undefined)
       }
     } catch (error) {
       console.error("Failed to check existing data:", error)
@@ -502,6 +748,8 @@ export function HealthDataModal({ isOpen, onClose, currentUser, onDataUpdate }: 
   }, [checkExistingData])
 
   const handleSubmit = async (values: FormValues) => {
+    console.log('🚀 handleSubmit called with values:', values)
+    
     if (!currentUser) {
       setModalState(prev => ({ ...prev, error: "No current user selected" }))
       return
@@ -510,12 +758,32 @@ export function HealthDataModal({ isOpen, onClose, currentUser, onDataUpdate }: 
     setModalState(prev => ({ ...prev, error: "", success: "" }))
 
     try {
-      const data = await createSleepDataEntry({
+      console.log('📋 Form values before processing:', values)
+      console.log('📋 Enhanced metrics check:', {
+        sleepLatency: values.sleepLatency,
+        sleepLatencyCheck: values.sleepLatency !== undefined && values.sleepLatency !== null,
+        hrvOvernight: values.hrvOvernight,
+        hrvCheck: values.hrvOvernight !== undefined && values.hrvOvernight !== null,
+        chronotype: values.chronotype,
+        chronotypeCheck: !!values.chronotype,
+        timingConsistency: values.timingConsistency,
+        timingCheck: values.timingConsistency !== undefined && values.timingConsistency !== null
+      })
+
+      const requestData = {
         date: values.date,
         total_sleep_hours: values.totalSleepHours,
         time_in_bed: values.timeInBed,
         rem_percentage: values.remPercentage,
-      })
+        // Include new optional fields if they have values (including 0)
+        ...(values.sleepLatency !== undefined && values.sleepLatency !== null && { sleep_latency_minutes: values.sleepLatency }),
+        ...(values.hrvOvernight !== undefined && values.hrvOvernight !== null && { hrv_overnight: values.hrvOvernight }),
+        ...(values.chronotype && { chronotype: values.chronotype }),
+        ...(values.timingConsistency !== undefined && values.timingConsistency !== null && { timing_consistency_hours: values.timingConsistency })
+      }
+      
+      console.log('📤 Sending sleep data request:', requestData)
+      const data = await createSleepDataEntry(requestData)
 
       setModalState(prev => ({
         ...prev,
@@ -548,7 +816,7 @@ export function HealthDataModal({ isOpen, onClose, currentUser, onDataUpdate }: 
 
   return (
     <Modal isOpen={isOpen} onClose={onClose}>
-      <GlassCard className="w-full max-w-4xl mx-4 h-[90vh] flex flex-col max-h-[90vh]">
+      <GlassCard className="w-full max-w-5xl mx-4 h-[95vh] flex flex-col max-h-[95vh]">
         <Formik
           initialValues={initialValues}
           validationSchema={validationSchema}
@@ -572,6 +840,11 @@ export function HealthDataModal({ isOpen, onClose, currentUser, onDataUpdate }: 
                 checkExistingData(formik.values.date, formik.setFieldValue)
               }
             }, [isOpen, currentUser])
+
+            // Debug: Log form values whenever they change
+            useEffect(() => {
+              console.log('📝 Current form values:', formik.values)
+            }, [formik.values])
 
             return (
               <>
@@ -600,7 +873,25 @@ export function HealthDataModal({ isOpen, onClose, currentUser, onDataUpdate }: 
                 </div>
 
                 {/* Content */}
-                <div className="flex-1 overflow-y-auto p-6 min-h-0">
+                <div 
+                  ref={scrollContainerRef}
+                  className="flex-1 overflow-y-auto p-6 min-h-0 scroll-smooth relative"
+                  onScroll={(e) => {
+                    const target = e.target as HTMLDivElement
+                    const scrolled = target.scrollTop > 200
+                    setShowEnhancedHint(!scrolled)
+                  }}
+                >
+                  {/* Floating Enhanced Metrics Hint */}
+                  {!modalState.showSuggestions && showEnhancedHint && (
+                    <div className="fixed bottom-24 right-8 z-50 animate-bounce">
+                      <div className="bg-gradient-to-r from-green-500 to-blue-500 text-white px-4 py-2 rounded-full shadow-lg flex items-center space-x-2 text-sm font-medium">
+                        <Activity className="h-4 w-4" />
+                        <span>Enhanced metrics available below!</span>
+                        <ChevronDown className="h-4 w-4" />
+                      </div>
+                    </div>
+                  )}
                 
                   {modalState.showSuggestions ? (
                     <>
